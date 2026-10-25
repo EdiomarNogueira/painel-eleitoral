@@ -243,15 +243,14 @@ async function main() {
   writeJson(historyFile, histories);
 
   if (isBootstrap) writeJson(bootstrapMarker, { completedAt: new Date().toISOString(), municipalities: cities.length });
-  const checkedAt = new Date().toISOString();
-  writeJson(path.join(dataRoot, 'manifest.json'), {
+  const manifestPath = path.join(dataRoot, 'manifest.json');
+  const previousManifest = readJson(manifestPath, null);
+  if (!previousManifest?.checkedAt) changed = true;
+  const checkedAt = changed ? new Date().toISOString() : previousManifest.checkedAt;
+  writeJson(manifestPath, {
     schema: 1,
     checkedAt,
-    updatedAt: histories.updatedAt,
-    cityRefresh: { shard, shardCount, refreshed: cityBatch.length, total: cities.length, bootstrap: isBootstrap },
-    requests,
-    missing,
-    failures
+    updatedAt: histories.updatedAt
   });
   setOutput('changed', String(changed));
   setOutput('checked_at', checkedAt);

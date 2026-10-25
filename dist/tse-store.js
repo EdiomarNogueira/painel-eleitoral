@@ -3,7 +3,7 @@
   const cache=new Map(),pending=new Map(),listeners=new Set();
   const url=(turn,uf='br',code='')=>`https://resultados.tse.jus.br/oficial/ele2026/${turn===1?'6257':'6258'}/dados/${uf}/${uf}${code}-c0001-e00${turn===1?'6257':'6258'}-u.json`;
   function expected(address){const m=address.match(/\/625([78])\/dados\/([a-z]{2})\/([a-z]{2})(\d{5})?-c0001-e00625[78]-u\.json$/);if(!m||m[2]!==m[3])throw Error('Endereço de resultado inesperado');return {turn:m[1]==='7'?1:2,scope:m[4]?'mu':m[2]==='br'?'br':'uf',area:m[4]||m[2]};}
-  function freeze(value){if(value&&typeof value==='object'){ bject.freeze(value); bject.values(value).forEach(freeze);}return value;}
+  function freeze(value){if(value&&typeof value==='object'){ Object.freeze(value); Object.values(value).forEach(freeze);}return value;}
   async function load(address){
     const exp=expected(address),old=cache.get(address);
     if(old&&(exp.turn===1&&old.result.st===old.result.ts||Date.now()-old.received<15000))return old.raw;
