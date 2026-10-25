@@ -2,6 +2,9 @@ name: Collect TSE data and publish Pages
 
 on:
   push:
+    # O commit automático dos snapshots não deve iniciar outra coleta em seguida.
+    paths-ignore:
+      - 'dist/data/tse/**'
   schedule:
     # GitHub Actions aceita agendamentos a partir de 5 minutos; execuções podem atrasar.
     - cron: '2-59/5 * * * *'
@@ -36,11 +39,12 @@ jobs:
         with:
           node-version: 24
 
-      - name: Collect official TSE snapshots
-        id: collect
-        run: node collect-tse.cjs
+      - name: Collect priority national and state snapshots
+        id: collect-core
+        run: node collect-tse.cjs --core-only
 
-      - name: Save shared snapshots in the repository
+      - name: Save priority snapshots in the repository
+        if: steps.collect-core.outputs.changed == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -50,17 +54,49 @@ jobs:
             git push origin "HEAD:${{ github.event.repository.default_branch }}"
           fi
 
-      - name: Configure GitHub Pages
-        if: github.event_name != 'schedule' || steps.collect.outputs.changed == 'true'
+      - name: Configure GitHub Pages for priority snapshots
+        if: github.event_name != 'schedule' || steps.collect-core.outputs.changed == 'true'
         uses: actions/configure-pages@v5
 
-      - name: Upload static site
-        if: github.event_name != 'schedule' || steps.collect.outputs.changed == 'true'
+      - name: Upload site with priority snapshots
+        if: github.event_name != 'schedule' || steps.collect-core.outputs.changed == 'true'
         uses: actions/upload-pages-artifact@v3
         with:
           path: dist
 
-      - name: Publish site
+      - name: Publish priority snapshots
         id: deployment
-        if: github.event_name != 'schedule' || steps.collect.outputs.changed == 'true'
+        if: github.event_name != 'schedule' || steps.collect-core.outputs.changed == 'true'
         uses: actions/deploy-pages@v4
+
+      - name: Collect municipality and exterior snapshots
+        id: collect-localities
+        run: node collect-tse.cjs --localities-only
+
+      - name: Save municipality and exterior snapshots in the repository
+        if: steps.collect-localities.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dist/data/tse
+          if ! git diff --cached --quiet; then
+            git commit -m "Update shared TSE locality snapshots"
+            git push origin "HEAD:${{ github.event.repository.default_branch }}"
+          fi
+
+      - name: Configure GitHub Pages for locality snapshots
+        if: steps.collect-localities.outputs.changed == 'true'
+        uses: actions/configure-pages@v5
+
+      - name: Upload site with locality snapshots
+        if: steps.collect-localities.outputs.changed == 'true'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          name: github-pages-localities
+          path: dist
+
+      - name: Publish locality snapshots
+        if: steps.collect-localities.outputs.changed == 'true'
+        uses: actions/deploy-pages@v4
+        with:
+          artifact_name: github-pages-localities

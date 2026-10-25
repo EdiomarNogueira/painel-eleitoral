@@ -4,6 +4,7 @@
  const localRoot=new URL('data/tse/',base);
  const historyCache=new Map();
  let manifestPromise,manifestValue=null,manifestReadAt=0;
+ function requireHttp(){if(window.location.protocol==='file:')throw Error('O painel foi aberto como arquivo. Na pasta raiz do projeto, execute node serve.cjs e abra http://127.0.0.1:4173/.');}
  function manifest(force=false){
   if(manifestValue&&!force&&Date.now()-manifestReadAt<30000)return Promise.resolve(manifestValue);
   if(manifestPromise)return manifestPromise;
@@ -11,10 +12,12 @@
   manifestPromise=nativeFetch(url,{cache:'no-store'}).then(r=>r.ok?r.json():null).then(value=>{if(manifestValue?.checkedAt&&value?.checkedAt!==manifestValue.checkedAt)historyCache.clear();manifestValue=value;manifestReadAt=Date.now();return value;}).catch(()=>manifestValue).finally(()=>{manifestPromise=null;});
   return manifestPromise;
  }
- function versioned(path,version){const url=new URL(path,base);if(version?.checkedAt)url.searchParams.set('v',version.checkedAt);return url;}
+ function cacheVersion(version){return version?.checkedAt||version?.updatedAt||Math.floor(Date.now()/60000);}
+ function versioned(path,version){const url=new URL(path,base);url.searchParams.set('v',String(cacheVersion(version)));return url;}
  async function loadObject(path){
-  const meta=await manifest(),key=path+'|'+(meta?.checkedAt||'');
-  if(!historyCache.has(key))historyCache.set(key,nativeFetch(versioned(path,meta),{cache:'no-store'}).then(async r=>{if(!r.ok)throw Error(`Snapshot do projeto indisponível (${r.status}).`);return r.json();}));
+  requireHttp();
+  const meta=await manifest(),key=path+'|'+cacheVersion(meta);
+  if(!historyCache.has(key))historyCache.set(key,nativeFetch(versioned(path,meta),{cache:'no-store'}).then(async r=>{if(!r.ok)throw Error(`Snapshot do projeto indisponível (${r.status}).`);return r.json();}).catch(error=>{historyCache.delete(key);throw error;}));
   return historyCache.get(key);
  }
  function response(value,status=200){return new Response(value===null?null:JSON.stringify(value),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}});}
@@ -29,9 +32,9 @@
   const address=typeof input==='string'?input:input instanceof URL?input.href:input?.url;
   const request=parse(address);
   if(!request)return nativeFetch(input,init);
+  requireHttp();
   if(init?.signal?.aborted)throw init.signal.reason||Error('Consulta cancelada');
   const meta=await manifest();
-  if(!meta)return response(null,503);
   if(request.code){
    const file=`${request.turn}/cities/${request.uf}.json`;
    try{const data=await loadObject(`data/tse/${file}`);const raw=data.results?.[request.code];return raw?response(raw):response(null,404);}catch{return response(null,503);}
@@ -42,13 +45,15 @@
  window.fetch=projectFetch;
  async function history(){
   const [meta,data]=await Promise.all([manifest(),loadObject('data/tse/history.json')]);
-  const received=Date.parse(meta?.checkedAt||'');
+  const received=Date.parse(meta?.checkedAt||data.updatedAt||'')||Date.now();
   for(const item of data.national||[])item.received=received;
   for(const list of Object.values(data.ufs||{}))if(list.length)list[list.length-1].received=received;
-  return {...data,checkedAt:meta?.checkedAt||null};
+  return {...data,checkedAt:meta?.checkedAt||data.updatedAt||null};
  }
  async function cityHistory(uf,code){
   try{const data=await loadObject(`data/tse/history-cities/${uf}.json`);return data[String(code)]||[];}catch{return [];}
  }
- window.TSEClient={history,cityHistory,manifest};
+ async function cityResults(uf,turn=6258){const data=await loadObject(`data/tse/${turn}/cities/${uf}.json`);return data.results||{};}
+ async function cityHistories(uf){return loadObject(`data/tse/history-cities/${uf}.json`);}
+ window.TSEClient={history,cityHistory,cityResults,cityHistories,manifest};
 })();

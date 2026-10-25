@@ -11,7 +11,7 @@ function parse(d,uf,code=null){
  if(!Number.isFinite(time))throw Error('Data inválida');
  return {a,b,st,ts,p:st/ts*100,remaining,time,label:d.dg+' '+d.hg,id:String(d.idg),turnout:root.ElectionModel?.turnout(d)};
 }
-function append(h,s){const p=h.at(-1);if(p&&s.time<p.time)return {h,old:true};if(p&&(s.a<p.a||s.b<p.b||s.st<p.st||s.ts!==p.ts))return {h:[s],reset:true};if(p&&s.a===p.a&&s.b===p.b&&s.st===p.st)return {h:[...h.slice(0,-1),s]};return {h:[...h,s].slice(-120)};}
+function append(h,s){const p=h.at(-1);if(p&&s.time<p.time)return {h,old:true};if(p&&(s.a<p.a||s.b<p.b||s.st<p.st||s.ts!==p.ts))return {h:[s],reset:true};if(p&&s.a===p.a&&s.b===p.b&&s.st===p.st&&s.remaining===p.remaining&&JSON.stringify(s.turnout||null)===JSON.stringify(p.turnout||null))return {h,unchanged:true};return {h:[...h,s].slice(-120)};}
 function estimate(h,method='recent'){
  const c=h?.at(-1);if(!c||!c.st)return null;
  if(c.st===c.ts)return {a:c.a,b:c.b,ra:0,rb:0,rateA:0,rateB:0,current:c};

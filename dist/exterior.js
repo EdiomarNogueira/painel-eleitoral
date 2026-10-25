@@ -10,7 +10,7 @@
   const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const clean = s => String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   const source = 'https://resultados.tse.jus.br/oficial/ele2026';
-  let mode = 'demo', inFlight = false, job = 0;
+  let mode = 'demo', inFlight = false, job = 0, sharedVersion = null;
   let lastStatus = '';
   const snapshots = {demo:{},official:{}};
   const latest = {demo:null,official:null};
@@ -65,7 +65,7 @@
     const electionLabel = isDemo ? '1º turno · resultado final oficial' : '2º turno · leituras oficiais';
     $('extDescription').textContent = isDemo
       ? 'Primeiro turno: votos reais por localidade, sem simular uma apuração por país. Os arquivos estão incluídos na distribuição do projeto.'
-      : 'Segundo turno: carregue as últimas leituras das 186 localidades salvas pelo projeto. Horários diferentes podem produzir diferenças em relação ao agregado ZZ.';
+      : 'Segundo turno: snapshots compartilhados das 186 localidades salvas pelo projeto. Horários diferentes podem produzir diferenças em relação ao agregado ZZ.';
     $('extLoad').textContent = isDemo ? 'Carregar/atualizar 1º turno ↻' : 'Carregar leituras do projeto ↻';
     $('extLoad').disabled = inFlight;
     $('extStop').disabled = !inFlight;
@@ -137,36 +137,41 @@
   const pause = ms => new Promise(resolve=>setTimeout(resolve,ms));
   async function load() {
     if (inFlight) return;
-    const active = mode;
+    const active = mode, turn = active === 'demo' ? 6257 : 6258;
     const ticket = ++job;
     inFlight = true;render();
     let completed = 0;
     const controller = new AbortController();
     activeController = controller;
-    const started = Date.now();
     try {
-      for (const loc of locations) {
-        if (ticket!==job) break;
-        // Evita 404 em rajadas e respeita uma cadência inferior a 4 req./seg.
-        const s = await readLoc(active,loc,controller.signal);
-        if (ticket!==job) break;
-        snapshots[active][loc.code] = s;
-        completed++;
-        note(`${completed}/${locations.length} localidades recebidas nesta consulta · ${Math.round((Date.now()-started)/1000)} s decorridos.`);
-        if (completed % 5 === 0 || completed === locations.length) render();
-        if (ticket!==job) break;
+      const manifest = active==='official' ? await TSEClient.manifest(true) : null;
+      const version = manifest?.checkedAt || 'unversioned';
+      if (active==='official' && version===sharedVersion && M.group(locations,snapshots.official).total.loaded===locations.length) {
+        note('A publicação compartilhada não mudou desde a última verificação.');
+        return;
+      }
+      note(`Carregando o lote compartilhado do ${active === 'demo' ? 'primeiro' : 'segundo'} turno…`);
+      const results = await TSEClient.cityResults('zz', turn);
+      if (ticket !== job) return;
+      for (let i=0;i<locations.length;i++) {
+        if (ticket!==job || controller.signal.aborted) break;
+        const loc=locations[i],raw=results[loc.code];
+        if (raw) { snapshots[active][loc.code]=M.readResult(raw,String(turn),loc.code); completed++; }
+        note(`${i+1}/${locations.length} localidades verificadas · ${completed} snapshots disponíveis.`);
+        if ((i+1)%20===0 || i+1===locations.length) render();
         await pause(0);
       }
       if (ticket===job) {
+        if (active==='official') sharedVersion=version;
         latest[active] = active === 'demo' ? new Date().toISOString() : {received:new Date().toISOString(),reference:null};
-        if (active==='official' && completed===locations.length) {
+        if (active==='official') {
           try { latest.official.reference = await getOfficialZZ(controller.signal); }
-          catch (e) { note('Localidades consultadas, mas a conferência ZZ falhou: '+e.message); }
+          catch (e) { note('Localidades carregadas, mas a conferência ZZ falhou: '+e.message); }
         }
-        note(`Consulta terminada: ${completed}/${locations.length} arquivos recebidos. ${completed===locations.length?'Cobertura completa.':'Cobertura parcial.'}`);
+        note(`Lote do projeto carregado: ${completed}/${locations.length} localidades. ${completed===locations.length?'Cobertura completa.':'Cobertura parcial.'}`);
       }
     } catch (e) {
-      if (ticket===job) note(`Coleta interrompida em ${completed}/${locations.length}: ${e.message}. Leituras anteriores preservadas. Verifique se a publicação compartilhada do projeto está disponível; para preparar os dados locais do 1º turno use node import-exterior.cjs.`);
+      if (ticket===job) note(`Não foi possível carregar o snapshot compartilhado: ${e.message}. Os dados já exibidos foram preservados.`);
     } finally {
       if (ticket===job) {inFlight=false;activeController=null;render();}
     }
@@ -182,9 +187,7 @@
     render();
   }
   function switchMode(next) {
-    stop();mode=next;render();
-    const loaded = M.group(locations,snapshots[next]).total.loaded;
-    note(loaded ? `${loaded}/${locations.length} localidades disponíveis neste turno.` : 'Nenhum snapshot por localidade carregado neste turno. Use o botão para carregar os dados compartilhados.');
+    stop();mode=next;render();load();
   }
   function exportCSV() {
     const data = M.group(locations,snapshots[mode]);
@@ -207,5 +210,6 @@
   window.addEventListener('horizonte-mode',e=>switchMode(e.detail));
   render();
   if (latest.demo) note(`Cache oficial do 1º turno carregado: ${M.group(locations,snapshots.demo).total.loaded}/${locations.length} localidades.`);
-  else note('Nenhum snapshot por localidade carregado neste turno. Use o botão para carregar os dados compartilhados.');
+  else note('Carregando automaticamente os snapshots compartilhados deste turno.');
+  setInterval(()=>{if(mode==='official'&&!inFlight)load();},60000);
 })();
