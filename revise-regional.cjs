@@ -1,0 +1,21 @@
+const fs=require('node:fs');let s=fs.readFileSync('dist/regional.js','utf8');
+const a=s.indexOf('function snapshot('),b=s.indexOf('function paint()',a);
+s=s.slice(0,a)+`function reset(){cityHistory={};for(const [id,base] of Object.entries(FIRST_TURN_CITIES)){const snap=FirstTurn.snapshot(base,100);snap.label=base.date+' '+base.time;cityHistory[id]=[snap];}ufHistory={};for(const uf of ufCodes)ufHistory[uf]=[FirstTurn.snapshot(FIRST_TURN_DATA.ufs[uf],5),FirstTurn.snapshot(FIRST_TURN_DATA.ufs[uf],10)];render();}
+`+s.slice(b);
+const x=s.indexOf(" $('advanceRegion').onclick="),y=s.indexOf(" $('exportRegions')",x);
+s=s.slice(0,x)+` $('advanceRegion').onclick=()=>{for(const uf of M.groups[$('demoRegion').value]){const h=ufHistory[uf],next=Math.min(100,h.at(-1).p+5);if(next!==h.at(-1).p)h.push(FirstTurn.snapshot(FIRST_TURN_DATA.ufs[uf],next));}render();};
+`+s.slice(y);
+s=s.replace("'DEMONSTRAÇÃO TERRITORIAL · Cenário independente do simulador acima. Nomes reais, votos e ritmos inteiramente fictícios.'","'DEMONSTRAÇÃO COM 1º TURNO · O mapa mostra o resultado municipal final entre Lula e Flávio. A simulação abaixo avança os estados separadamente, preservando as proporções reais de cada um. Não é o histórico da apuração nem uma previsão do segundo turno.'");
+s=s.replace("demo?'DADOS FICTÍCIOS'","demo?'1º TURNO · RESULTADO OFICIAL DE '+escape(s.label)").replace("demo?'Cenário artificial'","demo?'Comparação entre Lula e Flávio; os demais candidatos não entram neste percentual.'");
+s=s.replace("'Base inteiramente fictícia. '","'Base: primeiro turno real, com avanço proporcional simulado. '").replace("'demonstracao-ficticia'","'demonstracao-primeiro-turno'").replace("s.label='Demonstração fictícia'","s.label='Etapa proporcional do primeiro turno'");
+s=s.replace('Uma eleição, muitos ritmos.','De onde podem vir os próximos votos?').replace('MAPA MUNICIPAL + MODELO POR UF','CIDADES, ESTADOS E REGIÕES');
+s=s.replace('Atualizar 27 UFs + exterior','Consultar todos os estados e exterior').replace('Carregar cidades do recorte','Consultar cidades da área escolhida').replace('Projeção territorial','Como calcular por estado').replace('Ritmo recente por UF','Ritmo dos últimos lotes por estado').replace('Média acumulada por UF','Proporção já contada em cada estado');
+s=s.replace('<label>Lula no próximo lote','<label hidden>Lula no próximo lote').replace('Avançar ≈5 p.p. nesta região','Avançar 5 pontos nesta região');
+s=s.replace('Votos/seção no ritmo: Lula · Flávio','Votos por seção: Lula / Flávio').replace('Saldo de votos restantes para Lula','Quem ganha mais votos no restante?').replace("num((x-c.a)-(y-c.b))","num(Math.abs((x-c.a)-(y-c.b)))+' para '+((x-c.a)>=(y-c.b)?'Lula':'Flávio')");
+s=s.replace('28/28','28/28').replace('abrangências com estimativa','estados/DF/exterior com dados suficientes');
+s=s.replace('São exigidas todas as 28 abrangências','São exigidos todos os 26 estados, Distrito Federal e exterior').replace('Seções apuradas','Contagem concluída');
+s=s.replace('A demonstração territorial é independente do simulador nacional acima. Usa nomes reais apenas para demonstrar as cores solicitadas; todos os votos, tamanhos e ritmos são artificiais. Reiniciar ou trocar de modo não mistura dados fictícios e oficiais.','O laboratório regional é independente do avanço nacional acima. Ambos usam o mesmo resultado real do primeiro turno de 2026. Cada estado avança proporcionalmente sobre seu total final; não há histórico real de lotes nem transferência dos votos dos demais candidatos. O mapa mostra o resultado municipal completo entre Lula e Flávio, separado das etapas simuladas dos estados.');
+s=s.replace('Cor = liderança observada, nunca probabilidade.','Cor = liderança entre Lula e Flávio, nunca probabilidade nem vencedor entre todos os candidatos do 1º turno.');
+s=s.replace('<section class="scenarioBox">','<details class="scenarioBox"><summary>Avançado: explorar cenários possíveis</summary>').replace('</small></section><details class="regionalMethodology">','</small></details><details class="regionalMethodology">');
+fs.writeFileSync('dist/regional.js',s);
+let html=fs.readFileSync('dist/index.html','utf8').replace('<script src="regional.js">','<script src="first-turn-cities.js"></script><script src="regional.js">');fs.writeFileSync('dist/index.html',html);

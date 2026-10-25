@@ -1,0 +1,14 @@
+const assert=require('node:assert/strict'),M=require('./dist/regional-model');
+const old={a:6e6,b:4e6,st:10,ts:100,p:10,remaining:90e6,time:1},cur={a:8e6,b:7e6,st:15,ts:100,p:15,remaining:85e6,time:2};
+assert.equal(M.estimate([old]),null);
+const p=M.estimate([old,cur]);assert.equal(p.a,42e6);assert.equal(p.b,58e6);
+const capped=M.estimate([old,{...cur,remaining:100}]);assert.ok(Math.abs(capped.ra+capped.rb-100)<1e-8);
+assert.equal(M.append([cur],old).old,true);
+assert.equal(M.append([old],{...cur,a:1}).reset,true);
+assert.equal(M.append([cur],{...cur,time:3}).h.length,1);
+const complete=M.estimate([{...cur,st:100,p:100}]);assert.equal(complete.a,cur.a);assert.equal(complete.ra,0);
+const chance=M.simulate([{uf:'sp',est:p}],8);assert.equal(chance.a+chance.b+chance.tie,100);assert.deepEqual(chance,M.simulate([{uf:'sp',est:p}],8));
+assert.equal(M.simulate([{uf:'sp',est:null}],8),null);
+const certain=M.simulate([{uf:'sp',est:complete}],25);assert.equal(certain.a,100);
+const tied=M.simulate([{uf:'sp',est:{...complete,a:7e6,current:{...complete.current,a:7e6}}}],25);assert.equal(tied.tie,100);
+console.log('Modelos territoriais: extrapolação, teto de eleitorado, correções, dados antigos, empates, determinismo e cenários aprovados.');
