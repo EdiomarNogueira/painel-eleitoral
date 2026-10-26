@@ -11,7 +11,8 @@ const root = __dirname;
 const dataRoot = path.join(root, 'dist', 'data', 'tse');
 const historyFile = path.join(dataRoot, 'history.json');
 const bootstrapMarker = path.join(dataRoot, 'bootstrap-complete.json');
-const shardCount = 24;
+// O workflow de localidades roda a cada 20 minutos; 6 lotes completam um ciclo em cerca de 2 horas.
+const shardCount = 6;
 const historyLimit = 120;
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 let changed = false;

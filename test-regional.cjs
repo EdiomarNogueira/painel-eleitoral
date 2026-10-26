@@ -7,7 +7,7 @@ assert.equal(M.append([cur],old).old,true);
 assert.equal(M.append([old],{...cur,a:1}).reset,true);
 assert.equal(M.append([cur],{...cur,time:3}).h.length,1);
 const complete=M.estimate([{...cur,st:100,p:100}]);assert.equal(complete.a,cur.a);assert.equal(complete.ra,0);
-const chance=M.simulate([{uf:'sp',est:p}],8);assert.equal(chance.a+chance.b+chance.tie,100);assert.deepEqual(chance,M.simulate([{uf:'sp',est:p}],8));
+const chance=M.simulate([{uf:'sp',est:p}],8);assert.equal(chance.a+chance.b+chance.tie,100);assert.strictEqual(chance,M.simulate([{uf:'sp',est:p}],8));assert.equal(M.FRESH_MS,300000);
 assert.equal(M.simulate([{uf:'sp',est:null}],8),null);
 const certain=M.simulate([{uf:'sp',est:complete}],25);assert.equal(certain.a,100);
 const tied=M.simulate([{uf:'sp',est:{...complete,a:7e6,current:{...complete.current,a:7e6}}}],25);assert.equal(tied.tie,100);

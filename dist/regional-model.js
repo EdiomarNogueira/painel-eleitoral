@@ -1,5 +1,6 @@
 (function(root){
 const groups={Norte:['ac','am','ap','pa','ro','rr','to'],Nordeste:['al','ba','ce','ma','pb','pe','pi','rn','se'],'Centro-Oeste':['df','go','ms','mt'],Sudeste:['es','mg','rj','sp'],Sul:['pr','rs','sc'],Exterior:['zz']};
+const FRESH_MS=300000,simulationCache=new Map();
 const region=uf=>Object.keys(groups).find(k=>groups[k].includes(uf));
 function parse(d,uf,code=null){
  if(String(d.ele)!=='6258'||String(d.t)!=='2'||d.f!=='o'||d.tpabr!==(code?'mu':'uf')||String(d.cdabr).toLowerCase()!==String(code||uf).toLowerCase())throw Error('Abrangência ou eleição incorreta');
@@ -22,11 +23,11 @@ function estimate(h,method='recent'){
  return {a:c.a+ra,b:c.b+rb,ra,rb,rateA,rateB,current:c,capped:cap<1};
 }
 function rng(seed){let x=seed>>>0;return()=>{x=(1664525*x+1013904223)>>>0;return (x+.5)/4294967296;};}
-function simulate(entries,sigma,iterations=4000){if(!entries.length||entries.some(e=>!e.est))return null;const rand=rng(20261025),normal=()=>Math.sqrt(-2*Math.log(rand()))*Math.cos(2*Math.PI*rand());let a=0,b=0,tie=0;const shares=[];
+function simulate(entries,sigma,iterations=4000){if(!entries.length||entries.some(e=>!e.est))return null;const key=JSON.stringify([sigma,iterations,entries.map(({uf,est:e})=>[uf,e.ra,e.rb,e.current.a,e.current.b,e.current.p])]);if(simulationCache.has(key))return simulationCache.get(key);const rand=rng(20261025),normal=()=>Math.sqrt(-2*Math.log(rand()))*Math.cos(2*Math.PI*rand());let a=0,b=0,tie=0;const shares=[];
  for(let i=0;i<iterations;i++){const common=normal(),regional=Object.fromEntries(Object.keys(groups).map(g=>[g,normal()]));let va=0,vb=0;
  for(const {uf,est:e} of entries){const rem=e.ra+e.rb;const shift=sigma/100*Math.sqrt(1-e.current.p/100)*(.5*common+Math.sqrt(.75)*regional[region(uf)]);const share=rem?Math.max(0,Math.min(1,e.ra/rem+shift)):0;va+=e.current.a+rem*share;vb+=e.current.b+rem*(1-share);}
  if(Math.abs(va-vb)<1e-7)tie++;else if(va>vb)a++;else b++;shares.push(100*va/(va+vb));}
- shares.sort((x,y)=>x-y);return {a:100*a/iterations,b:100*b/iterations,tie:100*tie/iterations,low:shares[Math.floor(iterations*.05)],high:shares[Math.floor(iterations*.95)],iterations};
+ shares.sort((x,y)=>x-y);const result={a:100*a/iterations,b:100*b/iterations,tie:100*tie/iterations,low:shares[Math.floor(iterations*.05)],high:shares[Math.floor(iterations*.95)],iterations};simulationCache.set(key,result);if(simulationCache.size>12)simulationCache.delete(simulationCache.keys().next().value);return result;
 }
-root.RegionalModel={groups,region,parse,append,estimate,simulate};if(typeof module!=='undefined')module.exports=root.RegionalModel;
+root.RegionalModel={groups,region,parse,append,estimate,simulate,FRESH_MS};if(typeof module!=='undefined')module.exports=root.RegionalModel;
 })(globalThis);
