@@ -18,6 +18,7 @@ let changed = false;
 let requests = 0;
 let failures = 0;
 let missing = 0;
+let staleResponses = 0;
 
 async function mapLimit(items, limit, action) {
   let next = 0;
@@ -118,14 +119,18 @@ function urlFor(turn, uf, code = '') {
   return `https://resultados.tse.jus.br/oficial/ele2026/${turn}/dados/${uf}/${uf}${code}-c0001-e00${turn}-u.json`;
 }
 
-async function fetchTSE(turn, uf, code = '') {
+async function fetchTSE(turn, uf, code = '', timeoutMs = 15000) {
   await wait(260);
   requests++;
   const address = urlFor(turn, uf, code);
   let lastError;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const response = await fetch(address, { cache: 'no-store', signal: AbortSignal.timeout(15000) });
+      const response = await fetch(address, {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache, no-store, max-age=0', Pragma: 'no-cache', Accept: 'application/json' },
+        signal: AbortSignal.timeout(timeoutMs)
+      });
       if (response.status === 404) { missing++; return null; }
       if (!response.ok) throw new Error(`HTTP ${response.status} em ${uf}${code}`);
       return await response.json();
@@ -137,6 +142,13 @@ async function fetchTSE(turn, uf, code = '') {
   failures++;
   console.warn(`Falha em ${uf}${code}: ${lastError?.message || 'erro desconhecido'}`);
   return null;
+}
+
+function sourceTimestamp(raw) {
+  if (!raw?.dg || !raw?.hg) return null;
+  const [day, month, year] = raw.dg.split('/');
+  const timestamp = Date.parse(`${year}-${month}-${day}T${raw.hg}-03:00`);
+  return Number.isFinite(timestamp) ? timestamp : null;
 }
 
 function appendNational(list, snapshot) {
@@ -183,17 +195,29 @@ function captureProjection(histories, codes) {
 
 async function saveCore(turn, areas, histories) {
   await mapLimit(areas, 4, async uf => {
-    const raw = await fetchTSE(turn, uf);
+    const raw = await fetchTSE(turn, uf, '', 10000);
     if (!raw) return;
     try {
       if (uf === 'br') {
         const snapshot = ElectionModel.parseTSE(raw);
         const file = latestFile(turn, uf), previous = readJson(file, null);
+        const historyTimestamp = histories.national.at(-1)?.timestamp ?? 0;
+        if (snapshot.timestamp < Math.max(sourceTimestamp(previous) ?? 0, historyTimestamp)) {
+          staleResponses++;
+          console.warn(`Resposta antiga ignorada para ${uf}: ${raw.hg}.`);
+          return;
+        }
         if (!previous || signature(turn, uf, '', previous) !== signature(turn, uf, '', raw)) writeJson(file, raw);
         if (appendNational(histories.national, snapshot)) histories.updatedAt = new Date().toISOString();
       } else {
         const snapshot = RegionalModel.parse(raw, uf);
         const file = latestFile(turn, uf), previous = readJson(file, null);
+        const historyTimestamp = histories.ufs[uf]?.at(-1)?.time ?? 0;
+        if (snapshot.time < Math.max(sourceTimestamp(previous) ?? 0, historyTimestamp)) {
+          staleResponses++;
+          console.warn(`Resposta antiga ignorada para ${uf}: ${raw.hg}.`);
+          return;
+        }
         if (!previous || signature(turn, uf, '', previous) !== signature(turn, uf, '', raw)) writeJson(file, raw);
         histories.ufs[uf] ||= [];
         if (appendRegional(histories.ufs[uf], snapshot)) histories.updatedAt = new Date().toISOString();
@@ -217,13 +241,16 @@ async function saveLocality(turn, locality, options = {}) {
     else snapshot = RegionalModel.parse(raw, uf, code);
     snapshot.received = Date.now();
     const previous = stored.results[code];
+    const cityRecords = turn === 6258 && uf !== 'zz' ? cityHistory(uf) : null;
+    const history = cityRecords ? (cityRecords[code] || (cityRecords[code] = [])) : null;
+    const historyTimestamp = history?.at(-1)?.time ?? 0;
+    if ((sourceTimestamp(raw) ?? 0) < Math.max(sourceTimestamp(previous) ?? 0, historyTimestamp)) {
+      staleResponses++;
+      return;
+    }
     if (previous && signature(turn, uf, code, previous) === signature(turn, uf, code, raw)) return;
     stored.results[code] = raw;
-    if (turn === 6258 && uf !== 'zz') {
-      const records = cityHistory(uf);
-      const history = records[code] || (records[code] = []);
-      appendRegional(history, snapshot);
-    }
+    if (history) appendRegional(history, snapshot);
   } catch (error) {
     failures++;
     console.warn(`Resposta inválida para ${uf}${code}: ${error.message}`);
@@ -282,19 +309,24 @@ async function main() {
   }
 
   const manifestPath = path.join(dataRoot, 'manifest.json');
-  const previousManifest = readJson(manifestPath, null);
+  const selectedManifestPath = localitiesOnly ? path.join(dataRoot, 'localities-manifest.json') : manifestPath;
+  const previousManifest = readJson(selectedManifestPath, null);
   if (!previousManifest?.checkedAt) changed = true;
   const checkedAt = changed ? new Date().toISOString() : previousManifest.checkedAt;
-  writeJson(manifestPath, {
+  writeJson(selectedManifestPath, {
     schema: 1,
     checkedAt,
-    updatedAt: histories.updatedAt
+    updatedAt: localitiesOnly ? (previousManifest?.updatedAt || null) : histories.updatedAt
   });
   setOutput('changed', String(changed));
   setOutput('checked_at', checkedAt);
   const cityCount = coreOnly ? 0 : (isBootstrap ? cities.length : cities.filter((_, index) => index % shardCount === shard).length);
   const phase = coreOnly ? 'prioritária' : localitiesOnly ? 'municipal/exterior' : 'completa';
-  console.log(`Coleta ${phase} concluída: ${requests} consultas, ${cityCount} municípios no lote, ${missing} sem arquivo e ${failures} falhas.`);
+  const national = readJson(latestFile(6258, 'br'), null);
+  const ageMinutes = national && sourceTimestamp(national) ? Math.max(0, Math.round((Date.now() - sourceTimestamp(national)) / 60000)) : null;
+  const summary = `## Coleta TSE ${phase}\n\n- Coleta executada: ${new Date().toISOString()}\n- Snapshot nacional: ${national?.dg || 'indisponível'} ${national?.hg || ''}${ageMinutes === null ? '' : ` (${ageMinutes} min)`}\n- Consultas: ${requests}; municípios no lote: ${cityCount}\n- Sem arquivo: ${missing}; falhas: ${failures}; respostas antigas ignoradas: ${staleResponses}\n- Dados alterados: ${changed ? 'sim' : 'não'}\n`;
+  if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
+  console.log(`Coleta ${phase} concluída: ${requests} consultas, ${cityCount} municípios no lote, ${missing} sem arquivo, ${failures} falhas e ${staleResponses} respostas antigas ignoradas. Snapshot nacional: ${national?.hg || 'indisponível'}${ageMinutes === null ? '' : ` (${ageMinutes} min)`}.`);
 }
 
 main().catch(error => { console.error(error); process.exitCode = 1; });

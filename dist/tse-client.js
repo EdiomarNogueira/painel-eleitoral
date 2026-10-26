@@ -4,6 +4,7 @@
  const localRoot=new URL('data/tse/',base);
  const historyCache=new Map();
  let manifestPromise,manifestValue=null,manifestReadAt=0;
+ let localitiesManifestPromise,localitiesManifestValue=null,localitiesManifestReadAt=0,localitiesManifestLoaded=false;
  function requireHttp(){if(window.location.protocol==='file:')throw Error('O painel foi aberto como arquivo. Na pasta raiz do projeto, execute node serve.cjs e abra http://127.0.0.1:4173/.');}
  function manifest(force=false){
   if(manifestValue&&!force&&Date.now()-manifestReadAt<30000)return Promise.resolve(manifestValue);
@@ -12,11 +13,19 @@
   manifestPromise=nativeFetch(url,{cache:'no-store'}).then(r=>r.ok?r.json():null).then(value=>{if(manifestValue?.checkedAt&&value?.checkedAt!==manifestValue.checkedAt)historyCache.clear();manifestValue=value;manifestReadAt=Date.now();return value;}).catch(()=>manifestValue).finally(()=>{manifestPromise=null;});
   return manifestPromise;
  }
+ function localitiesManifest(force=false){
+  if(localitiesManifestLoaded&&!force&&Date.now()-localitiesManifestReadAt<30000)return Promise.resolve(localitiesManifestValue);
+  if(localitiesManifestPromise)return localitiesManifestPromise;
+  const url=new URL('localities-manifest.json',localRoot);url.searchParams.set('v',String(Date.now()));
+  localitiesManifestPromise=nativeFetch(url,{cache:'no-store'}).then(r=>r.ok?r.json():null).then(value=>{if(localitiesManifestValue?.checkedAt&&value?.checkedAt!==localitiesManifestValue.checkedAt)historyCache.clear();localitiesManifestValue=value;localitiesManifestLoaded=true;localitiesManifestReadAt=Date.now();return value;}).catch(()=>localitiesManifestValue).finally(()=>{localitiesManifestPromise=null;});
+  return localitiesManifestPromise;
+ }
  function cacheVersion(version){return version?.checkedAt||version?.updatedAt||Math.floor(Date.now()/60000);}
  function versioned(path,version){const url=new URL(path,base);url.searchParams.set('v',String(cacheVersion(version)));return url;}
- async function loadObject(path){
+ async function loadObject(path,isLocality=false){
   requireHttp();
-  const meta=await manifest(),key=path+'|'+cacheVersion(meta);
+  const [coreMeta,localMeta]=await Promise.all([manifest(),isLocality?localitiesManifest():Promise.resolve(null)]);
+  const meta=isLocality?(localMeta||coreMeta):coreMeta,key=path+'|'+cacheVersion(meta);
   if(!historyCache.has(key))historyCache.set(key,nativeFetch(versioned(path,meta),{cache:'no-store'}).then(async r=>{if(!r.ok)throw Error(`Snapshot do projeto indisponível (${r.status}).`);return r.json();}).catch(error=>{historyCache.delete(key);throw error;}));
   return historyCache.get(key);
  }
@@ -37,7 +46,7 @@
   const meta=await manifest();
   if(request.code){
    const file=`${request.turn}/cities/${request.uf}.json`;
-   try{const data=await loadObject(`data/tse/${file}`);const raw=data.results?.[request.code];return raw?response(raw):response(null,404);}catch{return response(null,503);}
+   try{const data=await loadObject(`data/tse/${file}`,true);const raw=data.results?.[request.code];return raw?response(raw):response(null,404);}catch{return response(null,503);}
   }
   const relative=`data/tse/${request.turn}/dados/${request.uf}/${request.filename}`;
   return nativeFetch(versioned(relative,meta),{...init,cache:'no-store'});
@@ -51,9 +60,9 @@
   return {...data,checkedAt:meta?.checkedAt||data.updatedAt||null};
  }
  async function cityHistory(uf,code){
-  try{const data=await loadObject(`data/tse/history-cities/${uf}.json`);return data[String(code)]||[];}catch{return [];}
+  try{const data=await loadObject(`data/tse/history-cities/${uf}.json`,true);return data[String(code)]||[];}catch{return [];}
  }
- async function cityResults(uf,turn=6258){const data=await loadObject(`data/tse/${turn}/cities/${uf}.json`);return data.results||{};}
- async function cityHistories(uf){return loadObject(`data/tse/history-cities/${uf}.json`);}
- window.TSEClient={history,cityHistory,cityResults,cityHistories,manifest};
+ async function cityResults(uf,turn=6258){const data=await loadObject(`data/tse/${turn}/cities/${uf}.json`,true);return data.results||{};}
+ async function cityHistories(uf){return loadObject(`data/tse/history-cities/${uf}.json`,true);}
+ window.TSEClient={history,cityHistory,cityResults,cityHistories,manifest,localitiesManifest};
 })();
