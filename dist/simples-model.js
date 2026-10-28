@@ -1,6 +1,86 @@
-(function(root){
-function aggregate(h){const values=Object.values(h).map(x=>x.at(-1));if(!values.length)return null;const sum=k=>values.reduce((n,v)=>n+(v[k]||0),0),ts=sum('ts'),st=sum('st');const keys=['electorate','covered','attended','abstained','totalVotes','valid','blank','nullVotes','technicalNull'];return {a:sum('a'),b:sum('b'),p:ts?100*st/ts:0,ts,st,turnout:Object.fromEntries(keys.map(k=>[k,values.some(v=>v.turnout?.[k]==null)?null:values.reduce((n,v)=>n+v.turnout[k],0)]))};}
-function regionRows(histories,entries){return Object.entries(root.RegionalModel.groups).map(([name,ufs])=>{const loaded=ufs.map(uf=>histories[uf]?.at(-1)).filter(Boolean),estimated=entries.filter(e=>ufs.includes(e.uf)&&e.est),all=loaded.length===ufs.length,ready=estimated.length===ufs.length;const count=loaded.reduce((s,v)=>({a:s.a+v.a,b:s.b+v.b,st:s.st+v.st,ts:s.ts+v.ts}),{a:0,b:0,st:0,ts:0});const end=estimated.reduce((s,v)=>({a:s.a+v.est.a,b:s.b+v.est.b}),{a:0,b:0});return {name,...count,p:all&&count.ts?count.st/count.ts*100:null,ready,all,finalA:ready?end.a:null,finalB:ready?end.b:null,remaining:ready?Math.max(0,end.a+end.b-count.a-count.b):null};});}
-function eligible(histories,entries,demo,now=Date.now()){if(entries.length!==28||entries.some(e=>!e.est))return false;if(demo)return true;const ss=Object.values(histories).map(h=>h.at(-1));return ss.length===28&&ss.every(s=>now-s.received<root.RegionalModel.FRESH_MS)&&Math.max(...ss.map(s=>s.time))-Math.min(...ss.map(s=>s.time))<=900000;}
-const api={aggregate,regionRows,eligible,FRESH_MS:root.RegionalModel.FRESH_MS};root.SimpleModel=api;if(typeof module!=='undefined')module.exports=api;
+(function (root) {
+  function aggregate(h) {
+    const values = Object.values(h).map((x) => x.at(-1));
+    if (!values.length) return null;
+    const sum = (k) => values.reduce((n, v) => n + (v[k] || 0), 0),
+      ts = sum("ts"),
+      st = sum("st");
+    const keys = [
+      "electorate",
+      "covered",
+      "attended",
+      "abstained",
+      "totalVotes",
+      "valid",
+      "blank",
+      "nullVotes",
+      "technicalNull",
+    ];
+    return {
+      a: sum("a"),
+      b: sum("b"),
+      p: ts ? (100 * st) / ts : 0,
+      ts,
+      st,
+      turnout: Object.fromEntries(
+        keys.map((k) => [
+          k,
+          values.some((v) => v.turnout?.[k] == null)
+            ? null
+            : values.reduce((n, v) => n + v.turnout[k], 0),
+        ]),
+      ),
+    };
+  }
+  function regionRows(histories, entries) {
+    return Object.entries(root.RegionalModel.groups).map(([name, ufs]) => {
+      const loaded = ufs.map((uf) => histories[uf]?.at(-1)).filter(Boolean),
+        estimated = entries.filter((e) => ufs.includes(e.uf) && e.est),
+        all = loaded.length === ufs.length,
+        ready = estimated.length === ufs.length;
+      const count = loaded.reduce(
+        (s, v) => ({
+          a: s.a + v.a,
+          b: s.b + v.b,
+          st: s.st + v.st,
+          ts: s.ts + v.ts,
+        }),
+        { a: 0, b: 0, st: 0, ts: 0 },
+      );
+      const end = estimated.reduce(
+        (s, v) => ({ a: s.a + v.est.a, b: s.b + v.est.b }),
+        { a: 0, b: 0 },
+      );
+      return {
+        name,
+        ...count,
+        p: all && count.ts ? (count.st / count.ts) * 100 : null,
+        ready,
+        all,
+        finalA: ready ? end.a : null,
+        finalB: ready ? end.b : null,
+        remaining: ready
+          ? Math.max(0, end.a + end.b - count.a - count.b)
+          : null,
+      };
+    });
+  }
+  function eligible(histories, entries, demo, now = Date.now()) {
+    if (entries.length !== 28 || entries.some((e) => !e.est)) return false;
+    if (demo) return true;
+    const ss = Object.values(histories).map((h) => h.at(-1));
+    return root.RegionalModel.usableRegions(
+      ss,
+      now,
+      root.RegionalModel.FRESH_MS,
+    );
+  }
+  const api = {
+    aggregate,
+    regionRows,
+    eligible,
+    FRESH_MS: root.RegionalModel.FRESH_MS,
+  };
+  root.SimpleModel = api;
+  if (typeof module !== "undefined") module.exports = api;
 })(globalThis);

@@ -1,34 +1,196 @@
-(()=>{
- const $=id=>document.getElementById(id),n=v=>v===null||v===undefined?'—':Math.round(v).toLocaleString('pt-BR'),p=(value,total)=>value!==null&&total>0?(100*value/total).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%':'—';
- const button=document.createElement('button');button.id='startTour';button.className='secondary';button.textContent='Como usar ?';document.querySelector('header').append(button);
- const section=document.createElement('section');section.id='participation';section.className='panel participation';section.innerHTML='<div class="sectionhead"><div><div class="eyebrow">ALÉM DOS VOTOS NOS CANDIDATOS</div><h2>Quem votou e como votou</h2></div><span class="tag">BRASIL · PRESIDENTE</span></div><p id="participationSource" role="status"></p><div id="participationCards" class="participationCards"></div><p id="participationCoverage"></p><details><summary>Qual é a base de cada percentual?</summary><p>Abstenção e comparecimento usam o eleitorado das seções instaladas já totalizadas, não o eleitorado nacional inteiro. A ausência de votos de uma seção ainda não totalizada não é abstenção.</p><p>Brancos, nulos e válidos usam o total de votos computados para presidente. Nulos incluem nulos técnicos. Votos anulados e anulados sub judice são categorias diferentes; por isso, válidos + brancos + nulos podem não representar todo o total.</p><p>As projeções dos candidatos usam a soma dos votos deles. Os percentuais deste resumo têm outros denominadores e não devem ser somados às participações dos candidatos. Valores ausentes aparecem como —. Este resumo mostra a contagem recebida, sem extrapolar abstenção, brancos ou nulos para o fim da eleição.</p></details>';
- document.querySelector('.summary').after(section);
- function update(detail){const {mode,cur}=detail;let t=cur?.turnout;
- $('participationSource').textContent=mode==='demo'?'BASE REAL DO 1º TURNO · Contagens distribuídas proporcionalmente na etapa simulada. Válidos incluem TODOS os candidatos; os cartões de projeção comparam apenas Lula e Flávio.':cur?`TSE · Arquivo nacional de ${cur.date} às ${cur.label} (Brasília). Dados parciais conforme a totalização.`:'Aguardando o arquivo nacional do TSE. Selecione Dados do TSE para consultar.';
- const cards=[['Abstenção',t?.abstained,t?.covered,'dos eleitores das seções contadas'],['Comparecimento',t?.attended,t?.covered,'dos eleitores das seções contadas'],['Brancos',t?.blank,t?.totalVotes,'dos votos computados'],['Nulos',t?.nullVotes,t?.totalVotes,'dos votos computados'],['Válidos',t?.valid,t?.totalVotes,'dos votos computados']];
- $('participationCards').innerHTML=cards.map(([label,value,total,desc])=>`<div><span class="label">${label}</span><strong>${p(value??null,total)}</strong><b>${n(value)} ${label==='Abstenção'||label==='Comparecimento'?'eleitores':'votos'}</b><small>${desc}</small></div>`).join('');
- $('participationCoverage').textContent=t?`Eleitorado nacional: ${n(t.electorate)} · Eleitores das seções contadas: ${n(t.covered)} (${p(t.covered,t.electorate)}) · Votos computados: ${n(t.totalVotes)} · Nulos técnicos incluídos: ${n(t.technicalNull)}.`:'Ainda não há dados de participação disponíveis.';
- }
- window.addEventListener('horizonte-reading',e=>update(e.detail));
- const dialog=document.createElement('dialog');dialog.id='tourDialog';dialog.setAttribute('aria-labelledby','tourTitle');dialog.setAttribute('aria-describedby','tourText');dialog.innerHTML='<div class="tourTop"><span id="tourStep"></span><button id="cancelTour" aria-label="Cancelar explicação">Cancelar ×</button></div><h2 id="tourTitle"></h2><p id="tourText"></p><div class="tourNav"><button id="tourPrev" class="secondary">← Anterior</button><button id="tourNext" class="primary">Próximo ↓</button></div>';document.body.append(dialog);
- const steps=[
- ['.mode','1. Escolha os dados','Demonstração com 1º turno usa resultados reais de 2026 em etapas proporcionais simuladas. Não reproduz a ordem histórica da apuração. O modo oficial mostra os snapshots do segundo turno coletados e compartilhados pelo projeto.'],
- ['.summary','2. Veja quanto já foi contado','Seções são os grupos eleitorais cujos resultados são recebidos. 10% das seções não significa exatamente 10% dos eleitores. Na demonstração, o avanço é uma etapa proporcional simulada.'],
- ['#participation','3. Entenda a participação','Abstenção significa que a pessoa não compareceu. Brancos e nulos são votos sem escolha válida de candidato. Os percentuais usam bases diferentes, explicadas neste bloco. Os válidos do 1º turno incluem todos os candidatos.'],
- ['.results','4. Compare votos atuais e projetados','Os cartões comparam somente Lula e Flávio. Por isso seus percentuais somam 100% mesmo no primeiro turno, em que houve outros candidatos. A projeção responde: e se o ritmo continuar? Ela não transfere os votos dos demais candidatos.'],
- ['#brazilMap','5. Explore uma cidade','Vermelho: Lula está à frente de Flávio. Azul: Flávio está à frente de Lula. Cinza: sem dados, zero ou empate entre eles. Use a busca e o seletor de cidade como alternativa ao mapa. No primeiro turno, os dados municipais são carregados da fonte oficial.'],
- ['.regionalControls','6. Avance uma região','Na demonstração, escolha uma região e avance a contagem. As proporções vêm dos resultados do primeiro turno de cada estado. Isso atualiza a contagem nacional e mostra como diferentes velocidades de apuração podem mudar a liderança.'],
- ['#regionRows','7. Veja o peso de cada região','A tabela mostra quanto foi contado e quantos votos cada região ainda pode acrescentar. O saldo identifica o candidato favorecido. No celular, deslize a tabela para os lados.'],
- ['#whatIf','8. Teste uma porcentagem na região','Escolha a região e informe o percentual final de Lula ou de Flávio. O outro percentual é preenchido automaticamente. Calcular altera apenas essa região; as demais mantêm sua projeção. O sistema não permite retirar votos já contados.'],
- ['.gaugeSection','9. Leia o mostrador','Lula fica à esquerda e Flávio à direita. O ponteiro mostra a porcentagem conforme a opção escolhida: votos projetados ou frequência nos cenários. A segunda opção é experimental e não é uma chance real validada.'],
- ['.scenarioBox','10. Explore cenários com cuidado','Esta área é opcional. Ela compara 4.000 resultados possíveis sob hipóteses de variação nos votos restantes. Frequência nos cenários não é chance real de eleição. Na demonstração, a base é o primeiro turno e não prevê migração de votos.'],
- ['.regionalMethodology','11. Confira como calculamos','Aqui estão as fórmulas e os limites do modelo regional. Para os dados oficiais, uma projeção nacional exige todos os estados, Distrito Federal e exterior com leituras suficientes.'],
- ['.history','12. Compare as leituras','O gráfico e a tabela mostram a evolução do cálculo nacional acima. No modo oficial, o histórico é compartilhado e fica salvo pelo projeto para todos acessarem. Você também pode exportá-lo. As etapas da demonstração são simuladas, não registros históricos.'],
- ['.methodology','13. Consulte as regras quando precisar','Estas são as fórmulas do cálculo nacional. Você chegou ao fim: Concluir fecha o tutorial. O botão Como usar permite começar novamente a qualquer momento.']
- ];
- let index=0,highlight=null,restoreDetails=[];
- function show(){if(highlight)highlight.classList.remove('tourHighlight');const [selector,title,text]=steps[index];highlight=document.querySelector(selector);if(highlight?.tagName==='DETAILS'&&!highlight.open){highlight.open=true;restoreDetails.push(highlight);}highlight?.classList.add('tourHighlight');highlight?.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'center'});$('tourStep').textContent=`ETAPA ${index+1} DE ${steps.length} · DE CIMA PARA BAIXO`;$('tourTitle').textContent=title;$('tourText').textContent=text;$('tourPrev').disabled=index===0;$('tourNext').textContent=index===steps.length-1?'Concluir ✓':'Próximo ↓';}
- function close(){highlight?.classList.remove('tourHighlight');restoreDetails.forEach(d=>d.open=false);restoreDetails=[];dialog.close();button.disabled=false;button.focus({preventScroll:true});}
- button.onclick=()=>{index=0;button.disabled=true;dialog.showModal();show();$('tourNext').focus({preventScroll:true});};$('tourNext').onclick=()=>{if(index===steps.length-1)close();else{index++;show();}};$('tourPrev').onclick=()=>{if(index>0){index--;show();}};$('cancelTour').onclick=close;dialog.oncancel=e=>{e.preventDefault();close();};
- render();
+(() => {
+  const $ = (id) => document.getElementById(id),
+    n = (v) =>
+      v === null || v === undefined
+        ? "—"
+        : Math.round(v).toLocaleString("pt-BR"),
+    p = (value, total) =>
+      value !== null && total > 0
+        ? ((100 * value) / total).toLocaleString("pt-BR", {
+            minimumFractionDigits: 1,
+            maximumFractionDigits: 1,
+          }) + "%"
+        : "—";
+  const button = document.createElement("button");
+  button.id = "startTour";
+  button.className = "secondary";
+  button.textContent = "Como usar ?";
+  document.querySelector("header").append(button);
+  const section = document.createElement("section");
+  section.id = "participation";
+  section.className = "panel participation";
+  section.innerHTML =
+    '<div class="sectionhead"><div><div class="eyebrow">ALÉM DOS VOTOS NOS CANDIDATOS</div><h2>Quem votou e como votou</h2></div><span class="tag">BRASIL · PRESIDENTE</span></div><p id="participationSource" role="status"></p><div id="participationCards" class="participationCards"></div><p id="participationCoverage"></p><details><summary>Qual é a base de cada percentual?</summary><p>Abstenção e comparecimento usam o eleitorado das seções instaladas já totalizadas, não o eleitorado nacional inteiro. A ausência de votos de uma seção ainda não totalizada não é abstenção.</p><p>Brancos, nulos e válidos usam o total de votos computados para presidente. Nulos incluem nulos técnicos. Votos anulados e anulados sub judice são categorias diferentes; por isso, válidos + brancos + nulos podem não representar todo o total.</p><p>As projeções dos candidatos usam a soma dos votos deles. Os percentuais deste resumo têm outros denominadores e não devem ser somados às participações dos candidatos. Valores ausentes aparecem como —. Este resumo mostra a contagem recebida, sem extrapolar abstenção, brancos ou nulos para o fim da eleição.</p></details>';
+  document.querySelector(".summary").after(section);
+  function update(detail) {
+    const { mode, cur } = detail;
+    let t = cur?.turnout;
+    $("participationSource").textContent =
+      mode === "demo"
+        ? "BASE REAL DO 1º TURNO · Contagens distribuídas proporcionalmente na etapa simulada. Válidos incluem TODOS os candidatos; os cartões de projeção comparam apenas Lula e Flávio."
+        : cur
+          ? `TSE · Arquivo nacional de ${cur.date} às ${cur.label} (Brasília). Dados parciais conforme a totalização.`
+          : "Aguardando o arquivo nacional do TSE. Selecione Dados do TSE para consultar.";
+    const cards = [
+      [
+        "Abstenção",
+        t?.abstained,
+        t?.covered,
+        "dos eleitores das seções contadas",
+      ],
+      [
+        "Comparecimento",
+        t?.attended,
+        t?.covered,
+        "dos eleitores das seções contadas",
+      ],
+      ["Brancos", t?.blank, t?.totalVotes, "dos votos computados"],
+      ["Nulos", t?.nullVotes, t?.totalVotes, "dos votos computados"],
+      ["Válidos", t?.valid, t?.totalVotes, "dos votos computados"],
+    ];
+    $("participationCards").innerHTML = cards
+      .map(
+        ([label, value, total, desc]) =>
+          `<div><span class="label">${label}</span><strong>${p(value ?? null, total)}</strong><b>${n(value)} ${label === "Abstenção" || label === "Comparecimento" ? "eleitores" : "votos"}</b><small>${desc}</small></div>`,
+      )
+      .join("");
+    $("participationCoverage").textContent = t
+      ? `Eleitorado nacional: ${n(t.electorate)} · Eleitores das seções contadas: ${n(t.covered)} (${p(t.covered, t.electorate)}) · Votos computados: ${n(t.totalVotes)} · Nulos técnicos incluídos: ${n(t.technicalNull)}.`
+      : "Ainda não há dados de participação disponíveis.";
+  }
+  window.addEventListener("horizonte-reading", (e) => update(e.detail));
+  const dialog = document.createElement("dialog");
+  dialog.id = "tourDialog";
+  dialog.setAttribute("aria-labelledby", "tourTitle");
+  dialog.setAttribute("aria-describedby", "tourText");
+  dialog.innerHTML =
+    '<div class="tourTop"><span id="tourStep"></span><button id="cancelTour" aria-label="Cancelar explicação">Cancelar ×</button></div><h2 id="tourTitle"></h2><p id="tourText"></p><div class="tourNav"><button id="tourPrev" class="secondary">← Anterior</button><button id="tourNext" class="primary">Próximo ↓</button></div>';
+  document.body.append(dialog);
+  const steps = [
+    [
+      ".mode",
+      "1. Escolha os dados",
+      "Demonstração com 1º turno usa resultados reais de 2026 em etapas proporcionais simuladas. Não reproduz a ordem histórica da apuração. O modo oficial mostra os snapshots do segundo turno coletados e compartilhados pelo projeto.",
+    ],
+    [
+      ".summary",
+      "2. Veja quanto já foi contado",
+      "Seções são os grupos eleitorais cujos resultados são recebidos. 10% das seções não significa exatamente 10% dos eleitores. Na demonstração, o avanço é uma etapa proporcional simulada.",
+    ],
+    [
+      "#participation",
+      "3. Entenda a participação",
+      "Abstenção significa que a pessoa não compareceu. Brancos e nulos são votos sem escolha válida de candidato. Os percentuais usam bases diferentes, explicadas neste bloco. Os válidos do 1º turno incluem todos os candidatos.",
+    ],
+    [
+      ".results",
+      "4. Compare votos atuais e projetados",
+      "Os cartões comparam somente Lula e Flávio. Por isso seus percentuais somam 100% mesmo no primeiro turno, em que houve outros candidatos. A projeção responde: e se o ritmo continuar? Ela não transfere os votos dos demais candidatos.",
+    ],
+    [
+      "#brazilMap",
+      "5. Explore uma cidade",
+      "Vermelho: Lula está à frente de Flávio. Azul: Flávio está à frente de Lula. Cinza: sem dados, zero ou empate entre eles. Use a busca e o seletor de cidade como alternativa ao mapa. No primeiro turno, os dados municipais são carregados da fonte oficial.",
+    ],
+    [
+      ".regionalControls",
+      "6. Avance uma região",
+      "Na demonstração, escolha uma região e avance a contagem. As proporções vêm dos resultados do primeiro turno de cada estado. Isso atualiza a contagem nacional e mostra como diferentes velocidades de apuração podem mudar a liderança.",
+    ],
+    [
+      "#regionRows",
+      "7. Veja o peso de cada região",
+      "A tabela mostra quanto foi contado e quantos votos cada região ainda pode acrescentar. O saldo identifica o candidato favorecido. No celular, deslize a tabela para os lados.",
+    ],
+    [
+      "#whatIf",
+      "8. Teste uma porcentagem na região",
+      "Escolha a região e informe o percentual final de Lula ou de Flávio. O outro percentual é preenchido automaticamente. Calcular altera apenas essa região; as demais mantêm sua projeção. O sistema não permite retirar votos já contados.",
+    ],
+    [
+      ".gaugeSection",
+      "9. Leia o mostrador",
+      "Lula fica à esquerda e Flávio à direita. O ponteiro mostra a porcentagem conforme a opção escolhida: votos projetados ou frequência nos cenários. A segunda opção é experimental e não é uma chance real validada.",
+    ],
+    [
+      ".scenarioBox",
+      "10. Explore cenários com cuidado",
+      "Esta área é opcional. Ela compara 4.000 resultados possíveis sob hipóteses de variação nos votos restantes. Frequência nos cenários não é chance real de eleição. Na demonstração, a base é o primeiro turno e não prevê migração de votos.",
+    ],
+    [
+      ".regionalMethodology",
+      "11. Confira como calculamos",
+      "Aqui estão as fórmulas e os limites do modelo regional. Para os dados oficiais, uma projeção nacional exige todos os estados, Distrito Federal e exterior com leituras suficientes.",
+    ],
+    [
+      ".history",
+      "12. Compare as leituras",
+      "O gráfico e a tabela mostram a evolução do cálculo nacional acima. No modo oficial, o histórico é compartilhado e fica salvo pelo projeto para todos acessarem. Você também pode exportá-lo. As etapas da demonstração são simuladas, não registros históricos.",
+    ],
+    [
+      ".methodology",
+      "13. Consulte as regras quando precisar",
+      "Estas são as fórmulas do cálculo nacional. Você chegou ao fim: Concluir fecha o tutorial. O botão Como usar permite começar novamente a qualquer momento.",
+    ],
+  ];
+  let index = 0,
+    highlight = null,
+    restoreDetails = [];
+  function show() {
+    if (highlight) highlight.classList.remove("tourHighlight");
+    const [selector, title, text] = steps[index];
+    highlight = document.querySelector(selector);
+    if (highlight?.tagName === "DETAILS" && !highlight.open) {
+      highlight.open = true;
+      restoreDetails.push(highlight);
+    }
+    highlight?.classList.add("tourHighlight");
+    highlight?.scrollIntoView({
+      behavior: matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "instant"
+        : "smooth",
+      block: "center",
+    });
+    $("tourStep").textContent =
+      `ETAPA ${index + 1} DE ${steps.length} · DE CIMA PARA BAIXO`;
+    $("tourTitle").textContent = title;
+    $("tourText").textContent = text;
+    $("tourPrev").disabled = index === 0;
+    $("tourNext").textContent =
+      index === steps.length - 1 ? "Concluir ✓" : "Próximo ↓";
+  }
+  function close() {
+    highlight?.classList.remove("tourHighlight");
+    restoreDetails.forEach((d) => (d.open = false));
+    restoreDetails = [];
+    dialog.close();
+    button.disabled = false;
+    button.focus({ preventScroll: true });
+  }
+  button.onclick = () => {
+    index = 0;
+    button.disabled = true;
+    dialog.showModal();
+    show();
+    $("tourNext").focus({ preventScroll: true });
+  };
+  $("tourNext").onclick = () => {
+    if (index === steps.length - 1) close();
+    else {
+      index++;
+      show();
+    }
+  };
+  $("tourPrev").onclick = () => {
+    if (index > 0) {
+      index--;
+      show();
+    }
+  };
+  $("cancelTour").onclick = close;
+  dialog.oncancel = (e) => {
+    e.preventDefault();
+    close();
+  };
+  // O app publica horizonte-reading depois de iniciar; não há dependência de render global.
 })();

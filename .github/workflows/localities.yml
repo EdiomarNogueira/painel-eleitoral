@@ -2,8 +2,8 @@ name: Collect municipal and exterior TSE data
 
 on:
   schedule:
-    # Atualização independente da coleta nacional, fora do início da hora.
-    - cron: '13,33,53 * * * *'
+    # A cada 5 minutos: apenas localidades ainda incompletas.
+    - cron: '4-59/5 * * * *'
   workflow_dispatch:
 
 permissions:

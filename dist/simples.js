@@ -1,59 +1,660 @@
-(()=>{'use strict';
-const $=id=>document.getElementById(id),R=RegionalModel,S=SimpleModel,ufCodes=Object.keys(FIRST_TURN_DATA.ufs),fmt=n=>Math.round(n).toLocaleString('pt-BR'),pct=n=>Number.isFinite(n)?n.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%':'—',esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),normal=s=>s.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
-let mode='official',demoH={},officialH={},national=null,records={demo:[],official:[]},scenario=null,scenarioInputDirty=false,controller=null,extController=null,sigmaTimer=null,lastFetch=null,sharedVersion=null,sharedSync=false;
-const abroad={demo:{...(window.EXTERIOR_FIRST_TURN?.localities||{})},official:{}};
-const histories=()=>mode==='demo'?demoH:officialH;
-const entries=()=>ufCodes.map(uf=>({uf,est:R.estimate(histories()[uf],$('method').value)}));
-const current=()=>mode==='demo'?S.aggregate(demoH):national;
-function split(a,b){const total=a+b,p=total?100*a/total:0;return `<div class="split" aria-label="Lula ${total?pct(p):'sem votos'}; Flávio ${total?pct(100-p):'sem votos'}"><span style="width:${p}%"></span><span style="width:${total?100-p:0}%"></span></div>`;}
-function capture(){const c=current();if(!c)return;const record={p:c.p,recent:null,average:null};for(const method of ['recent','average']){const es=ufCodes.map(uf=>({uf,est:R.estimate(histories()[uf],method)}));if(S.eligible(histories(),es,mode==='demo'))record[method]=ScenarioModel.totals(es);}const list=records[mode];if(!list.length||JSON.stringify(list.at(-1))!==JSON.stringify(record))list.push(record);}
-function resetDemo(){demoH={};records.demo=[];for(const uf of ufCodes)demoH[uf]=[FirstTurn.snapshot(FIRST_TURN_DATA.ufs[uf],5)];capture();for(const uf of ufCodes)demoH[uf].push(FirstTurn.snapshot(FIRST_TURN_DATA.ufs[uf],10));capture();scenario=null;scenarioInputDirty=false;render();}
-function advance(ufs){let changed=false;for(const uf of ufs){const h=demoH[uf],p=Math.min(100,h.at(-1).p+5);if(p!==h.at(-1).p){h.push(FirstTurn.snapshot(FIRST_TURN_DATA.ufs[uf],p));changed=true;}}if(!changed)return;scenario=null;scenarioInputDirty=false;capture();render();$('scenarioStatus').textContent='A contagem mudou. Calcule novamente para testar um cenário nesta base.';}
-function comparison(container,before,after,firstLabel='Agora',lastLabel='Final'){$(container).innerHTML=['Lula','Flávio'].map((name,i)=>{const key=i?'b':'a',a=before&&before.a+before.b?100*before[key]/(before.a+before.b):null,b=after&&after.a+after.b?100*after[key]/(after.a+after.b):null;return `<div class="compareRow ${i?'blue':'red'}"><div class="compareName">${name}</div><div class="barRow"><span>${firstLabel}</span><div class="barTrack"><i class="before" style="width:${a??0}%"></i></div><b>${pct(a)}</b></div><div class="barRow"><span>${lastLabel}</span><div class="barTrack"><i style="width:${b??0}%"></i></div><b>${pct(b)}</b></div></div>`;}).join('');}
-function renderSummary(c,projected){const sum=c?c.a+c.b:0;$('candidateCards').innerHTML=[['Lula','13',c?.a],['Flávio Bolsonaro','22',c?.b]].map(([name,id,v],i)=>`<div class="${i?'blue':'red'}"><img src="photos/${id}.jpeg" alt="${name}" width="56" height="56"><h3>${name}</h3><strong>${sum?pct(100*v/sum):'—'}</strong><small>${v!=null?fmt(v)+' votos':'Aguardando leitura'}</small></div>`).join('');$('currentBar').innerHTML=split(c?.a||0,c?.b||0);$('currentLead').textContent=!sum?'Ainda não há votos para comparar.':c.a===c.b?'Os dois estão empatados na contagem.':`${c.a>c.b?'Lula':'Flávio'} tem ${fmt(Math.abs(c.a-c.b))} votos a mais na contagem atual.`;$('progressRing').style.setProperty('--p',c?.p||0);$('progressValue').textContent=c?pct(c.p):'—';$('progressCaption').textContent=mode==='demo'?'Etapa proporcional simulada com resultados reais do 1º turno.':national?`${fmt(national.counted)} de ${fmt(national.total)} seções totalizadas.`:'Aguardando a primeira consulta.';
-comparison('comparisonChart',c,projected);$('projectedLead').textContent=projected?`${projected.a===projected.b?'Empate':projected.a>projected.b?'Lula ficaria à frente':'Flávio ficaria à frente'} se o ritmo de cada estado continuar.`:'Projeção indisponível: precisamos de leituras suficientes em todos os estados e no exterior.';
-const method=$('method').value,rawPoints=records[mode].filter(r=>r[method]),fallback=!rawPoints.length&&Boolean(c&&c.a+c.b),points=rawPoints.length?rawPoints:(fallback?[{p:c.p,[method]:{a:c.a,b:c.b}}]:[]);const svg=([key,color])=>{const ps=points.map(r=>[45+r.p*4.3,170-140*r[method][key]/(r[method].a+r[method].b)]);return `<polyline points="${ps.map(p=>p.join(',')).join(' ')}" fill="none" stroke="${color}" stroke-width="3"/>${ps.map(p=>`<circle cx="${p[0]}" cy="${p[1]}" r="4" fill="${color}"/>`).join('')}`;};$('trendChart').className='trend';$('trendChart').innerHTML=points.length?`<svg viewBox="0 0 500 215" role="img" aria-label="Projeção de Lula e Flávio, de zero a cem por cento, conforme avança a contagem"><line x1="45" y1="100" x2="475" y2="100" stroke="#adbfc9" stroke-dasharray="5 5"/><text x="3" y="33">100%</text><text x="10" y="104">50%</text><text x="17" y="174">0%</text><text x="45" y="200">0% das seções</text><text x="380" y="200">100% das seções</text>${[['a','#ba3d48'],['b','#266caf']].map(svg).join('')}</svg>`:'<p class="empty">O gráfico começa quando houver base para uma projeção. No ritmo recente, precisamos de duas leituras com avanço.</p>';if(fallback)$('trendChart').querySelector('svg').insertAdjacentHTML('beforeend','<text x="95" y="25">Contagem atual; aguardando leituras para projetar a tendência</text>');$('trendCaption').textContent=mode==='demo'?'As etapas são simuladas, não registros históricos. Avance uma região para observar o efeito na contagem.':'O gráfico registra somente leituras desta sessão. Não representa o histórico anterior à abertura da página.';
-const t=c?.turnout;const metrics=[['Abstenção',t?.abstained,t?.covered,'eleitores'],['Comparecimento',t?.attended,t?.covered,'eleitores'],['Brancos',t?.blank,t?.totalVotes,'votos'],['Nulos',t?.nullVotes,t?.totalVotes,'votos'],['Válidos',t?.valid,t?.totalVotes,'votos']];$('participationMetrics').innerHTML=metrics.map(([label,v,total,unit])=>`<div class="metric"><span>${label}</span><strong>${v!=null&&total>0?pct(100*v/total):'—'}</strong><small>${v!=null?fmt(v)+' '+unit:'Sem leitura'}</small><div class="miniTrack"><i style="width:${v!=null&&total>0?100*v/total:0}%"></i></div></div>`).join('');}
-function renderRegions(es){const rows=S.regionRows(histories(),es),max=Math.max(1,...rows.map(r=>r.ready?r.finalA+r.finalB:r.a+r.b));$('regionChart').innerHTML=rows.map(r=>`<div class="regionRow"><div><b>${r.name}</b><br><small>${pct(r.p)} das seções${!r.all?' · parcial':''}</small></div><div><div class="regionStack" aria-label="${r.name}: ${fmt(r.a+r.b)} votos contados e ${r.remaining==null?'restante indisponível':fmt(r.remaining)+' restantes estimados'}"><span style="width:${100*(r.a+r.b)/max}%"></span><span style="width:${100*(r.remaining||0)/max}%"></span></div></div><div><b>${r.remaining==null?'—':fmt(r.remaining)}</b><br><small>restantes estimados</small></div></div>`).join('');$('regionCoverage').textContent=`${es.filter(e=>e.est).length} de 28 unidades com estimativa (26 estados, Distrito Federal e exterior). Larguras usam a mesma escala de votos entre os dois candidatos.`;$('regionCards').innerHTML=rows.map(r=>`<article class="card"><h3>${r.name}</h3><p>${r.ready?'Projeção ao final, entre os dois:':'Ainda sem base para uma projeção.'}</p><div class="countryValues"><b class="red">Lula ${r.ready?pct(100*r.finalA/(r.finalA+r.finalB)):'—'}</b><b class="blue">Flávio ${r.ready?pct(100*r.finalB/(r.finalA+r.finalB)):'—'}</b></div>${split(r.finalA||0,r.finalB||0)}<small>${r.ready?`${fmt(Math.abs((r.finalA-r.a)-(r.finalB-r.b)))} votos de vantagem para ${(r.finalA-r.a)>=(r.finalB-r.b)?'Lula':'Flávio'} no restante estimado.`:'Consulte novamente após a entrada de novos votos.'}</small></article>`).join('');$('regionNext').disabled=mode==='demo'&&R.groups[$('advanceRegion').value].every(uf=>demoH[uf].at(-1).p>=100);}
-function scenarioReadiness(es){if(mode==='demo')return '';const available=es.filter(e=>e.est).length;if(available<28)return `Simulação oficial aguardando projeção: ${available}/28 unidades prontas; faltam ${28-available}.`;const snapshots=Object.values(histories()).map(h=>h.at(-1));if(snapshots.length!==28)return `Simulação oficial aguardando 28 leituras estaduais; encontrei ${snapshots.length}.`;const age=Math.max(...snapshots.map(s=>Date.now()-(s.received||0)));if(age>=S.FRESH_MS)return `Simulação oficial pausada: a publicação compartilhada tem ${Math.max(1,Math.floor(age/60000))} min. Aguarde uma publicação recente do projeto ou selecione Demonstração com 1º turno.`;const times=snapshots.map(s=>s.time);if(Math.max(...times)-Math.min(...times)>900000)return 'Simulação oficial aguardando leituras com horários mais próximos entre os estados.';return '';}
-function syncScenarioInputs(es,ready){if(!ready||scenarioInputDirty)return;const bounds=ScenarioModel.limits(es,$('scenarioRegion').value);if(bounds.error)return;const share=Math.max(bounds.min,Math.min(bounds.max,60));$('scenarioA').value=String(share);$('scenarioB').value=String(100-share);}
-function renderScenario(es,ready){const before=ready?ScenarioModel.totals(es):null,after=ready?(scenario?.after||before):null;comparison('scenarioComparison',before,after,'Antes','Depois');const right=after?100*after.b/(after.a+after.b):50,angle=Math.PI*(1-right/100);$('scenarioGauge').className='scenarioGauge';$('scenarioGauge').innerHTML=`<svg viewBox="0 0 400 240" role="img" aria-label="${after?'Projeção: Lula '+pct(100-right)+' e Flávio '+pct(right):'Aguardando projeção'}"><path d="M 35 190 A 165 165 0 0 1 200 25" fill="none" stroke="#ba3d48" stroke-width="20"/><path d="M 200 25 A 165 165 0 0 1 365 190" fill="none" stroke="#266caf" stroke-width="20"/>${after?`<line x1="200" y1="190" x2="${200+130*Math.cos(angle)}" y2="${190-130*Math.sin(angle)}" stroke="#192b35" stroke-width="5"/><circle cx="200" cy="190" r="9" fill="#192b35"/>`:''}<text x="25" y="225" font-size="13" fill="#ba3d48">100% Lula</text><text x="375" y="225" text-anchor="end" font-size="13" fill="#266caf">100% Flávio</text></svg>`;$('scenarioImpact').textContent=!ready?'Aguardando uma projeção completa e atualizada.':scenario?`A mudança em ${scenario.region} altera a projeção de Lula em ${fmt(scenario.after.a-scenario.before.a)} votos. Demais regiões preservadas.`:before?'Sem alteração: o mostrador usa a projeção atual por estados.':'Aguardando dados para calcular o cenário.';$('calculate').disabled=!ready;
-if(ready){const group=$('scenarioRegion').value,subset=es.filter(e=>R.region(e.uf)===group),total=ScenarioModel.totals(subset),sum=total.a+total.b,min=100*subset.reduce((n,e)=>n+e.est.current.a,0)/sum,max=100*(sum-subset.reduce((n,e)=>n+e.est.current.b,0))/sum;$('scenarioLimits').textContent=`Pelos votos já contados, Lula pode terminar entre ${pct(min)} e ${pct(max)} em ${group}.`;}else $('scenarioLimits').textContent=scenarioReadiness(es)||'Precisamos de uma projeção completa para alterar uma região.';
-$('sigmaLabel').textContent=$('sigma').value+' pontos percentuais';const sim=ready?R.simulate(scenario?.entries||es,Number($('sigma').value)):null;$('chanceMetrics').className='chanceMetrics';$('chanceMetrics').innerHTML=sim?`<div class="metric red"><span>Lula nos cenários</span><strong>${pct(sim.a)}</strong></div><div class="metric blue"><span>Flávio nos cenários</span><strong>${pct(sim.b)}</strong></div><div class="metric"><span>Empate</span><strong>${pct(sim.tie)}</strong></div>`:'Aguardando uma base completa.';}
-function render(){const es=entries(),ready=S.eligible(histories(),es,mode==='demo'),c=current();$('sourceNote').textContent=mode==='demo'?'DEMONSTRAÇÃO COM 1º TURNO · Resultados reais de 2026 em etapas proporcionais simuladas. Não é o histórico da apuração nem uma previsão do 2º turno.':'DADOS OFICIAIS DO 2º TURNO · Publicações verificadas a cada minuto; o projeto coleta dados a cada cinco minutos e atualiza municípios em lotes.';$('demoActions').hidden=mode!=='demo';$('liveActions').hidden=mode!=='official';$('regionDemo').hidden=mode!=='demo';if(mode==='demo')$('status').textContent='Etapa simulada · '+pct(c?.p)+' das seções';else if(!controller)$('status').textContent=national?`Arquivo Brasil: ${national.date} ${national.label} · Brasília${!ready?' · projeção ainda sem base suficiente ou desatualizada':''}`:'Nenhuma leitura compartilhada carregada nesta tela.';$('next').disabled=mode==='demo'&&c?.p>=100-1e-8;syncScenarioInputs(es,ready);renderSummary(c,ready?ScenarioModel.totals(es):null);renderRegions(es);renderScenario(es,ready);renderAbroad();compareContext();}
-async function json(url,signal){return TSEStore.getURL(url,{signal});}
-async function refresh(){if(controller)return;const ctl=new AbortController();controller=ctl;$('refresh').disabled=true;$('stop').disabled=false;let error=null;try{const staged={};for(let i=0;i<ufCodes.length;i++){const uf=ufCodes[i];$('status').textContent=`Carregando estados compartilhados: ${i+1}/28…`;const d=await json(`https://resultados.tse.jus.br/oficial/ele2026/6258/dados/${uf}/${uf}-c0001-e006258-u.json`,AbortSignal.any([ctl.signal,AbortSignal.timeout(15000)])),s=R.parse(d,uf);s.received=Date.now();const result=R.append(officialH[uf]||[],s);if(result.old)throw Error('Foi recebida uma versão anterior de '+uf.toUpperCase());staged[uf]=result.h;await new Promise(r=>setTimeout(r,0));ctl.signal.throwIfAborted();}const nationalData=ElectionModel.parseTSE(await json('https://resultados.tse.jus.br/oficial/ele2026/6258/dados/br/br-c0001-e006258-u.json',AbortSignal.any([ctl.signal,AbortSignal.timeout(15000)])));if(national&&nationalData.timestamp<national.timestamp)throw Error('Arquivo nacional anterior à última leitura');if(mode==='official'){officialH=staged;national=nationalData;lastFetch=Date.now();scenario=null;scenarioInputDirty=false;capture();}}catch(e){error=ctl.signal.aborted?'Consulta cancelada. Leituras anteriores preservadas.':'Falha ao carregar snapshot compartilhado: '+e.message+'. Leituras anteriores preservadas.';}finally{controller=null;$('refresh').disabled=false;$('stop').disabled=true;render();if(error&&mode==='official')$('status').textContent=error;}}
-async function checkShared(force=true){
- if(mode!=='official'||controller||sharedSync)return;
- sharedSync=true;
- const activeMode=mode;
- $('status').textContent='Verificando a publicação compartilhada…';
- try{
-  const meta=await TSEClient.manifest(force);
-  const version=meta?.checkedAt||'unversioned';
-  if(version===sharedVersion&&national){$('status').textContent='Publicação compartilhada sem mudanças desde a última verificação.';return;}
-  const shared=await TSEClient.history();
-  if(mode!==activeMode)return;
-  officialH=shared.ufs||{};
-  national=shared.national?.at(-1)||null;
-  records.official=shared.projections||[];
-  sharedVersion=version;
-  scenario=null;scenarioInputDirty=false;
-  capture();
-  render();
-  await loadAbroad();
- }catch(e){
-  if(mode===activeMode){render();$('status').textContent='Falha ao carregar dados compartilhados: '+e.message+'. A leitura anterior foi preservada.';}
- }finally{sharedSync=false;}
-}function renderAbroad(){const data=ExteriorModel.group(EXTERIOR_LOCATIONS,abroad[mode]),q=normal($('countrySearch').value),rows=data.rows.filter(r=>normal(r.name+' '+r.places.map(p=>p.name).join(' ')).includes(q)).sort((a,b)=>b.valid-a.valid||a.name.localeCompare(b.name,'pt-BR'));$('abroadNote').textContent=mode==='demo'?'Resultado final real do primeiro turno por país. Esses dados não acompanham as etapas simuladas do Resumo.':'Segundo turno: arquivos coletados pelo projeto. Países incompletos são identificados.';$('abroadSummary').innerHTML=`<p class="takeaway">${data.total.loaded}/${data.localities} localidades carregadas · ${data.total.loaded?fmt(data.total.valid):"—"} votos válidos${data.total.loaded<data.localities?' · cobertura parcial':''}</p>`;$('countryChart').innerHTML=!data.total.loaded?'<p class="empty">O cadastro de países está disponível, mas os resultados ainda não foram carregados. O lote do projeto é carregado automaticamente. Nenhum valor foi preenchido artificialmente.</p>':!rows.length?'<p class="empty">Nenhum país ou localidade encontrado.</p>':rows.map(r=>{const sum=r.a+r.b;return `<div class="countryRow"><div class="countryTitle"><b>${esc(r.name)}</b><span>${fmt(r.valid)} votos válidos</span></div><small>${r.loaded}/${r.places.length} localidades${r.loaded<r.places.length?' · PARCIAL':''}</small>${split(r.a,r.b)}<div class="countryValues"><span class="red">Lula ${sum?pct(100*r.a/sum):'—'}</span><span class="blue">Flávio ${sum?pct(100*r.b/sum):'—'}</span></div><details><summary>Ver localidades e números</summary><p>${r.places.map(p=>`${esc(p.name)}: ${p.snapshot?fmt(p.snapshot.a)+' Lula / '+fmt(p.snapshot.b)+' Flávio · '+esc(p.snapshot.date)+' '+esc(p.snapshot.time):'sem leitura'}`).join('<br>')}</p></details></div>`;}).join('');}
-async function loadAbroad(){if(extController)return;const ctl=new AbortController(),target=mode,turn=mode==='demo'?6257:6258;extController=ctl;$('loadAbroad').disabled=true;$('stopAbroad').disabled=false;let count=0;try{const results=await TSEClient.cityResults('zz',turn);ctl.signal.throwIfAborted();for(const loc of EXTERIOR_LOCATIONS){ctl.signal.throwIfAborted();const raw=results[loc.code];if(raw){abroad[target][loc.code]=ExteriorModel.readResult(raw,String(turn),loc.code);count++;}if(count%10===0)renderAbroad();await new Promise(r=>setTimeout(r,0));}$('abroadStatus').textContent=`Lote compartilhado carregado: ${count}/${EXTERIOR_LOCATIONS.length} localidades.`;}catch(e){$('abroadStatus').textContent=ctl.signal.aborted?'Carregamento cancelado. Dados recebidos foram preservados.':'Não foi possível carregar o snapshot compartilhado: '+e.message+'. Dados anteriores foram preservados.';}finally{extController=null;$('loadAbroad').disabled=false;$('stopAbroad').disabled=true;renderAbroad();}}
-function compareContext(){const active=$('tab-comparison').getAttribute('aria-selected')==='true';document.querySelector('.sourceControl').hidden=active;document.querySelector('.actionbar').hidden=active;if(active)$('sourceNote').textContent='COMPARATIVO OFICIAL ENTRE TURNOS · Esta aba usa somente resultados oficiais. A demonstração e os cenários das outras abas não alteram estes números.';}
-function activate(id,focus=false){document.querySelectorAll('[role=tab]').forEach(b=>{const active=b.id==='tab-'+id;b.setAttribute('aria-selected',String(active));b.tabIndex=active?0:-1;$(b.getAttribute('aria-controls')).hidden=!active;if(active&&focus)b.focus();});history.replaceState(null,'','#'+id);render();}
-document.querySelectorAll('[role=tab]').forEach((button,i,all)=>{button.onclick=()=>activate(button.getAttribute('aria-controls'));button.onkeydown=e=>{let next;if(e.key==='ArrowRight')next=(i+1)%all.length;if(e.key==='ArrowLeft')next=(i+all.length-1)%all.length;if(e.key==='Home')next=0;if(e.key==='End')next=all.length-1;if(next!==undefined){e.preventDefault();activate(all[next].getAttribute('aria-controls'),true);}};});
-for(const id of ['advanceRegion','scenarioRegion'])$(id).innerHTML=Object.keys(R.groups).map(g=>`<option ${g==='Nordeste'?'selected':''}>${g}</option>`).join('');
-$('sourceMode').onchange=()=>{controller?.abort();extController?.abort();mode=$('sourceMode').value;scenario=null;scenarioInputDirty=false;$('scenarioStatus').textContent='';$('abroadStatus').textContent='';render();if(mode==='official'){checkShared(true);loadAbroad();}};$('next').onclick=()=>advance(ufCodes);$('reset').onclick=resetDemo;$('regionNext').onclick=()=>advance(R.groups[$('advanceRegion').value]);$('advanceRegion').onchange=render;$('refresh').onclick=refresh;$('stop').onclick=()=>controller?.abort();$('method').onchange=()=>{scenario=null;scenarioInputDirty=false;render();};$('scenarioRegion').onchange=()=>{scenario=null;scenarioInputDirty=false;$('scenarioStatus').textContent='';render();};$('sigma').oninput=()=>{$('sigmaLabel').textContent=$('sigma').value+' pontos percentuais';clearTimeout(sigmaTimer);sigmaTimer=setTimeout(render,120);};
-for(const [from,to] of [['scenarioA','scenarioB'],['scenarioB','scenarioA']])$(from).oninput=()=>{scenarioInputDirty=true;const v=$(from).value,n=Number(v);$(to).value=v!==''&&n>=0&&n<=100?String(Number((100-n).toFixed(6))):'';};
-$('calculate').onclick=()=>{const es=entries();if(!S.eligible(histories(),es,mode==='demo'))return;const v=$('scenarioA').value,result=ScenarioModel.changeRegion(es,$('scenarioRegion').value,v===''?NaN:Number(v));$('scenarioStatus').className=result.error?'error':'';if(result.error){$('scenarioStatus').textContent=result.error;return;}scenario=result;$('scenarioStatus').textContent=`Cenário aplicado em ${scenario.region}: Lula ${pct(scenario.share)} / Flávio ${pct(100-scenario.share)}.`;render();};$('clearScenario').onclick=()=>{scenario=null;scenarioInputDirty=false;$('scenarioStatus').textContent='Alteração removida. Mostrando a projeção atual.';render();};$('countrySearch').oninput=renderAbroad;$('loadAbroad').onclick=loadAbroad;$('stopAbroad').onclick=()=>extController?.abort();
-const d=FIRST_TURN_DATA.national;$('fullFirstTurn').innerHTML=`<p>Arquivo oficial gerado em ${esc(d.date)} às ${esc(d.time)}. Percentuais sobre todos os votos válidos.</p><div class="tableWrap"><table><caption>Brasil · primeiro turno de 2026</caption><thead><tr><th scope="col">Candidato</th><th scope="col">Votos</th><th scope="col">% dos válidos</th></tr></thead><tbody>${[...d.candidates].sort((a,b)=>b.votes-a.votes).map(c=>`<tr><td>${esc(c.name)}</td><td>${fmt(c.votes)}</td><td>${pct(100*c.votes/Number(d.v.vv))}</td></tr>`).join('')}</tbody></table></div>`;
-mode='demo';resetDemo();mode='official';$('sourceMode').value='official';const initial=location.hash.slice(1);if(['summary','regions','simulate','abroad','comparison'].includes(initial))activate(initial);else render();checkShared(true);loadAbroad();setInterval(()=>{if(mode==='official')checkShared(true);},60000);
+(() => {
+  "use strict";
+  const $ = (id) => document.getElementById(id),
+    R = RegionalModel,
+    S = SimpleModel,
+    ufCodes = Object.keys(FIRST_TURN_DATA.ufs),
+    fmt = (n) => Math.round(n).toLocaleString("pt-BR"),
+    pct = (n) =>
+      Number.isFinite(n)
+        ? n.toLocaleString("pt-BR", {
+            minimumFractionDigits: 1,
+            maximumFractionDigits: 1,
+          }) + "%"
+        : "—",
+    esc = (s) =>
+      String(s).replace(
+        /[&<>"']/g,
+        (c) =>
+          ({
+            "&": "&amp;",
+            "<": "&lt;",
+            ">": "&gt;",
+            '"': "&quot;",
+            "'": "&#39;",
+          })[c],
+      ),
+    normal = (s) =>
+      s
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase();
+  let mode = "official",
+    demoH = {},
+    officialH = {},
+    national = null,
+    records = { demo: [], official: [] },
+    scenario = null,
+    scenarioInputDirty = false,
+    controller = null,
+    extController = null,
+    sigmaTimer = null,
+    lastFetch = null,
+    sharedVersion = null,
+    sharedSync = false;
+  const abroad = {
+    demo: { ...(window.EXTERIOR_FIRST_TURN?.localities || {}) },
+    official: {},
+  };
+  const histories = () => (mode === "demo" ? demoH : officialH);
+  const entries = () =>
+    ufCodes.map((uf) => ({
+      uf,
+      est: R.estimate(histories()[uf], $("method").value),
+    }));
+  const current = () => (mode === "demo" ? S.aggregate(demoH) : national);
+  function split(a, b) {
+    const total = a + b,
+      p = total ? (100 * a) / total : 0;
+    return `<div class="split" aria-label="Lula ${total ? pct(p) : "sem votos"}; Flávio ${total ? pct(100 - p) : "sem votos"}"><span style="width:${p}%"></span><span style="width:${total ? 100 - p : 0}%"></span></div>`;
+  }
+  function capture() {
+    const c = current();
+    if (!c) return;
+    const record = { p: c.p, recent: null, average: null };
+    for (const method of ["recent", "average"]) {
+      const es = ufCodes.map((uf) => ({
+        uf,
+        est: R.estimate(histories()[uf], method),
+      }));
+      if (S.eligible(histories(), es, mode === "demo"))
+        record[method] = ScenarioModel.totals(es);
+    }
+    const list = records[mode];
+    if (!list.length || JSON.stringify(list.at(-1)) !== JSON.stringify(record))
+      list.push(record);
+  }
+  function resetDemo() {
+    demoH = {};
+    records.demo = [];
+    for (const uf of ufCodes)
+      demoH[uf] = [FirstTurn.snapshot(FIRST_TURN_DATA.ufs[uf], 5)];
+    capture();
+    for (const uf of ufCodes)
+      demoH[uf].push(FirstTurn.snapshot(FIRST_TURN_DATA.ufs[uf], 10));
+    capture();
+    scenario = null;
+    scenarioInputDirty = false;
+    render();
+  }
+  function advance(ufs) {
+    let changed = false;
+    for (const uf of ufs) {
+      const h = demoH[uf],
+        p = Math.min(100, h.at(-1).p + 5);
+      if (p !== h.at(-1).p) {
+        h.push(FirstTurn.snapshot(FIRST_TURN_DATA.ufs[uf], p));
+        changed = true;
+      }
+    }
+    if (!changed) return;
+    scenario = null;
+    scenarioInputDirty = false;
+    capture();
+    render();
+    $("scenarioStatus").textContent =
+      "A contagem mudou. Calcule novamente para testar um cenário nesta base.";
+  }
+  function comparison(
+    container,
+    before,
+    after,
+    firstLabel = "Agora",
+    lastLabel = "Final",
+  ) {
+    $(container).innerHTML = ["Lula", "Flávio"]
+      .map((name, i) => {
+        const key = i ? "b" : "a",
+          a =
+            before && before.a + before.b
+              ? (100 * before[key]) / (before.a + before.b)
+              : null,
+          b =
+            after && after.a + after.b
+              ? (100 * after[key]) / (after.a + after.b)
+              : null;
+        return `<div class="compareRow ${i ? "blue" : "red"}"><div class="compareName">${name}</div><div class="barRow"><span>${firstLabel}</span><div class="barTrack"><i class="before" style="width:${a ?? 0}%"></i></div><b>${pct(a)}</b></div><div class="barRow"><span>${lastLabel}</span><div class="barTrack"><i style="width:${b ?? 0}%"></i></div><b>${pct(b)}</b></div></div>`;
+      })
+      .join("");
+  }
+  function renderSummary(c, projected) {
+    const sum = c ? c.a + c.b : 0;
+    $("candidateCards").innerHTML = [
+      ["Lula", "13", c?.a],
+      ["Flávio Bolsonaro", "22", c?.b],
+    ]
+      .map(
+        ([name, id, v], i) =>
+          `<div class="${i ? "blue" : "red"}"><img src="photos/${id}.jpeg" alt="${name}" width="56" height="56"><h3>${name}</h3><strong>${sum ? pct((100 * v) / sum) : "—"}</strong><small>${v != null ? fmt(v) + " votos" : "Aguardando leitura"}</small></div>`,
+      )
+      .join("");
+    $("currentBar").innerHTML = split(c?.a || 0, c?.b || 0);
+    $("currentLead").textContent = !sum
+      ? "Ainda não há votos para comparar."
+      : c.a === c.b
+        ? "Os dois estão empatados na contagem."
+        : `${c.a > c.b ? "Lula" : "Flávio"} tem ${fmt(Math.abs(c.a - c.b))} votos a mais na contagem atual.`;
+    $("progressRing").style.setProperty("--p", c?.p || 0);
+    $("progressValue").textContent = c ? pct(c.p) : "—";
+    $("progressCaption").textContent =
+      mode === "demo"
+        ? "Etapa proporcional simulada com resultados reais do 1º turno."
+        : national
+          ? `${fmt(national.counted)} de ${fmt(national.total)} seções totalizadas.`
+          : "Aguardando a primeira consulta.";
+    comparison("comparisonChart", c, projected);
+    $("projectedLead").textContent = projected
+      ? `${projected.a === projected.b ? "Empate" : projected.a > projected.b ? "Lula ficaria à frente" : "Flávio ficaria à frente"} se o ritmo de cada estado continuar.`
+      : "Projeção indisponível: precisamos de leituras suficientes em todos os estados e no exterior.";
+    if (mode === "official" && R.isComplete(c)) {
+      $("projectedLead").textContent =
+        "Contagem encerrada: estes são os votos totalizados, sem crescimento projetado.";
+    }
+    const method = $("method").value,
+      rawPoints = records[mode].filter((r) => r[method]),
+      fallback = !rawPoints.length && Boolean(c && c.a + c.b),
+      points = rawPoints.length
+        ? rawPoints
+        : fallback
+          ? [{ p: c.p, [method]: { a: c.a, b: c.b } }]
+          : [];
+    const svg = ([key, color]) => {
+      const ps = points.map((r) => [
+        45 + r.p * 4.3,
+        170 - (140 * r[method][key]) / (r[method].a + r[method].b),
+      ]);
+      return `<polyline points="${ps.map((p) => p.join(",")).join(" ")}" fill="none" stroke="${color}" stroke-width="3"/>${ps.map((p) => `<circle cx="${p[0]}" cy="${p[1]}" r="4" fill="${color}"/>`).join("")}`;
+    };
+    $("trendChart").className = "trend";
+    $("trendChart").innerHTML = points.length
+      ? `<svg viewBox="0 0 500 215" role="img" aria-label="Projeção de Lula e Flávio, de zero a cem por cento, conforme avança a contagem"><line x1="45" y1="100" x2="475" y2="100" stroke="#adbfc9" stroke-dasharray="5 5"/><text x="3" y="33">100%</text><text x="10" y="104">50%</text><text x="17" y="174">0%</text><text x="45" y="200">0% das seções</text><text x="380" y="200">100% das seções</text>${[
+          ["a", "#ba3d48"],
+          ["b", "#266caf"],
+        ]
+          .map(svg)
+          .join("")}</svg>`
+      : '<p class="empty">O gráfico começa quando houver base para uma projeção. No ritmo recente, precisamos de duas leituras com avanço.</p>';
+    if (fallback)
+      $("trendChart")
+        .querySelector("svg")
+        .insertAdjacentHTML(
+          "beforeend",
+          '<text x="95" y="25">Contagem atual; aguardando leituras para projetar a tendência</text>',
+        );
+    $("trendCaption").textContent =
+      mode === "demo"
+        ? "As etapas são simuladas, não registros históricos. Avance uma região para observar o efeito na contagem."
+        : "O gráfico registra somente leituras desta sessão. Não representa o histórico anterior à abertura da página.";
+    const t = c?.turnout;
+    const metrics = [
+      ["Abstenção", t?.abstained, t?.covered, "eleitores"],
+      ["Comparecimento", t?.attended, t?.covered, "eleitores"],
+      ["Brancos", t?.blank, t?.totalVotes, "votos"],
+      ["Nulos", t?.nullVotes, t?.totalVotes, "votos"],
+      ["Válidos", t?.valid, t?.totalVotes, "votos"],
+    ];
+    $("participationMetrics").innerHTML = metrics
+      .map(
+        ([label, v, total, unit]) =>
+          `<div class="metric"><span>${label}</span><strong>${v != null && total > 0 ? pct((100 * v) / total) : "—"}</strong><small>${v != null ? fmt(v) + " " + unit : "Sem leitura"}</small><div class="miniTrack"><i style="width:${v != null && total > 0 ? (100 * v) / total : 0}%"></i></div></div>`,
+      )
+      .join("");
+  }
+  function renderRegions(es) {
+    const rows = S.regionRows(histories(), es),
+      max = Math.max(
+        1,
+        ...rows.map((r) => (r.ready ? r.finalA + r.finalB : r.a + r.b)),
+      );
+    $("regionChart").innerHTML = rows
+      .map(
+        (r) =>
+          `<div class="regionRow"><div><b>${r.name}</b><br><small>${pct(r.p)} das seções${!r.all ? " · parcial" : ""}</small></div><div><div class="regionStack" aria-label="${r.name}: ${fmt(r.a + r.b)} votos contados e ${r.remaining == null ? "restante indisponível" : fmt(r.remaining) + " restantes estimados"}"><span style="width:${(100 * (r.a + r.b)) / max}%"></span><span style="width:${(100 * (r.remaining || 0)) / max}%"></span></div></div><div><b>${r.remaining == null ? "—" : fmt(r.remaining)}</b><br><small>restantes estimados</small></div></div>`,
+      )
+      .join("");
+    $("regionCoverage").textContent =
+      `${es.filter((e) => e.est).length} de 28 unidades com estimativa (26 estados, Distrito Federal e exterior). Larguras usam a mesma escala de votos entre os dois candidatos.`;
+    $("regionCards").innerHTML = rows
+      .map(
+        (r) =>
+          `<article class="card"><h3>${r.name}</h3><p>${r.ready ? "Projeção ao final, entre os dois:" : "Ainda sem base para uma projeção."}</p><div class="countryValues"><b class="red">Lula ${r.ready ? pct((100 * r.finalA) / (r.finalA + r.finalB)) : "—"}</b><b class="blue">Flávio ${r.ready ? pct((100 * r.finalB) / (r.finalA + r.finalB)) : "—"}</b></div>${split(r.finalA || 0, r.finalB || 0)}<small>${r.ready ? `${fmt(Math.abs(r.finalA - r.a - (r.finalB - r.b)))} votos de vantagem para ${r.finalA - r.a >= r.finalB - r.b ? "Lula" : "Flávio"} no restante estimado.` : "Consulte novamente após a entrada de novos votos."}</small></article>`,
+      )
+      .join("");
+    $("regionNext").disabled =
+      mode === "demo" &&
+      R.groups[$("advanceRegion").value].every(
+        (uf) => demoH[uf].at(-1).p >= 100,
+      );
+  }
+  function scenarioReadiness(es) {
+    if (
+      mode === "demo" ||
+      R.usableRegions(Object.values(histories()).map((h) => h.at(-1)))
+    )
+      return "";
+    const available = es.filter((e) => e.est).length;
+    if (available < 28)
+      return `Simulação oficial aguardando projeção: ${available}/28 unidades prontas; faltam ${28 - available}.`;
+    const snapshots = Object.values(histories()).map((h) => h.at(-1));
+    if (snapshots.length !== 28)
+      return `Simulação oficial aguardando 28 leituras estaduais; encontrei ${snapshots.length}.`;
+    const age = Math.max(
+      ...snapshots.map((s) => Date.now() - (s.received || 0)),
+    );
+    if (age >= S.FRESH_MS)
+      return `Simulação oficial pausada: a publicação compartilhada tem ${Math.max(1, Math.floor(age / 60000))} min. Aguarde uma publicação recente do projeto ou selecione Demonstração com 1º turno.`;
+    const times = snapshots.map((s) => s.time);
+    if (Math.max(...times) - Math.min(...times) > 900000)
+      return "Simulação oficial aguardando leituras com horários mais próximos entre os estados.";
+    return "";
+  }
+  function syncScenarioInputs(es, ready) {
+    if (!ready || scenarioInputDirty) return;
+    const bounds = ScenarioModel.limits(es, $("scenarioRegion").value);
+    if (bounds.error) return;
+    const share = Math.max(bounds.min, Math.min(bounds.max, 60));
+    $("scenarioA").value = String(share);
+    $("scenarioB").value = String(100 - share);
+  }
+  function renderScenario(es, ready) {
+    const before = ready ? ScenarioModel.totals(es) : null,
+      after = ready ? scenario?.after || before : null;
+    comparison("scenarioComparison", before, after, "Antes", "Depois");
+    const right = after ? (100 * after.b) / (after.a + after.b) : 50,
+      angle = Math.PI * (1 - right / 100);
+    $("scenarioGauge").className = "scenarioGauge";
+    $("scenarioGauge").innerHTML =
+      `<svg viewBox="0 0 400 240" role="img" aria-label="${after ? "Projeção: Lula " + pct(100 - right) + " e Flávio " + pct(right) : "Aguardando projeção"}"><path d="M 35 190 A 165 165 0 0 1 200 25" fill="none" stroke="#ba3d48" stroke-width="20"/><path d="M 200 25 A 165 165 0 0 1 365 190" fill="none" stroke="#266caf" stroke-width="20"/>${after ? `<line x1="200" y1="190" x2="${200 + 130 * Math.cos(angle)}" y2="${190 - 130 * Math.sin(angle)}" stroke="#192b35" stroke-width="5"/><circle cx="200" cy="190" r="9" fill="#192b35"/>` : ""}<text x="25" y="225" font-size="13" fill="#ba3d48">100% Lula</text><text x="375" y="225" text-anchor="end" font-size="13" fill="#266caf">100% Flávio</text></svg>`;
+    $("scenarioImpact").textContent = !ready
+      ? "Aguardando uma projeção completa e atualizada."
+      : scenario
+        ? `A mudança em ${scenario.region} altera a projeção de Lula em ${fmt(scenario.after.a - scenario.before.a)} votos. Demais regiões preservadas.`
+        : before
+          ? "Sem alteração: o mostrador usa a projeção atual por estados."
+          : "Aguardando dados para calcular o cenário.";
+    $("calculate").disabled = !ready;
+    const finalized =
+      mode === "official" &&
+      ready &&
+      es.every((e) => R.isComplete(e.est.current));
+    document.querySelector("#simulate .advanced").hidden = finalized;
+    for (const id of ["scenarioA", "scenarioB"]) $(id).disabled = finalized;
+    if (finalized) {
+      $("calculate").disabled = true;
+      for (const id of ["scenarioA", "scenarioB"])
+        $(id).value = Number($(id).value).toFixed(2);
+      $("scenarioImpact").textContent =
+        "Apuração encerrada em todas as regiões. O mostrador apresenta o resultado totalizado; não há votos restantes para projetar.";
+    }
+    if (ready) {
+      const group = $("scenarioRegion").value,
+        subset = es.filter((e) => R.region(e.uf) === group),
+        total = ScenarioModel.totals(subset),
+        sum = total.a + total.b,
+        min = (100 * subset.reduce((n, e) => n + e.est.current.a, 0)) / sum,
+        max =
+          (100 * (sum - subset.reduce((n, e) => n + e.est.current.b, 0))) / sum;
+      $("scenarioLimits").textContent =
+        `Pelos votos já contados, Lula pode terminar entre ${pct(min)} e ${pct(max)} em ${group}.`;
+    } else
+      $("scenarioLimits").textContent =
+        scenarioReadiness(es) ||
+        "Precisamos de uma projeção completa para alterar uma região.";
+    $("sigmaLabel").textContent = $("sigma").value + " pontos percentuais";
+    if (finalized)
+      $("scenarioLimits").textContent =
+        "Esta região já encerrou a contagem. Os percentuais acima são os resultados finais.";
+    const sim =
+      ready && !finalized
+        ? R.simulate(scenario?.entries || es, Number($("sigma").value))
+        : null;
+    $("chanceMetrics").className = "chanceMetrics";
+    $("chanceMetrics").innerHTML = sim
+      ? `<div class="metric red"><span>Lula nos cenários</span><strong>${pct(sim.a)}</strong></div><div class="metric blue"><span>Flávio nos cenários</span><strong>${pct(sim.b)}</strong></div><div class="metric"><span>Empate</span><strong>${pct(sim.tie)}</strong></div>`
+      : "Aguardando uma base completa.";
+  }
+  function render() {
+    const es = entries(),
+      ready = S.eligible(histories(), es, mode === "demo"),
+      c = current();
+    $("sourceNote").textContent =
+      mode === "demo"
+        ? "DEMONSTRAÇÃO COM 1º TURNO · Resultados reais de 2026 em etapas proporcionais simuladas. Não é o histórico da apuração nem uma previsão do 2º turno."
+        : "DADOS OFICIAIS DO 2º TURNO · Verificação a cada 5 minutos. Resultados com 100% das seções são reutilizados; só localidades pendentes precisam de nova coleta.";
+    $("demoActions").hidden = mode !== "demo";
+    $("liveActions").hidden = mode !== "official";
+    $("regionDemo").hidden = mode !== "demo";
+    if (mode === "demo")
+      $("status").textContent = "Etapa simulada · " + pct(c?.p) + " das seções";
+    else if (!controller)
+      $("status").textContent = national
+        ? `Arquivo Brasil: ${national.date} ${national.label} · Brasília${!ready ? " · projeção ainda sem base suficiente ou desatualizada" : ""}`
+        : "Nenhuma leitura compartilhada carregada nesta tela.";
+    $("next").disabled = mode === "demo" && c?.p >= 100 - 1e-8;
+    syncScenarioInputs(es, ready);
+    renderSummary(c, ready ? ScenarioModel.totals(es) : null);
+    renderRegions(es);
+    renderScenario(es, ready);
+    renderAbroad();
+    compareContext();
+  }
+  async function json(url, signal) {
+    return TSEStore.getURL(url, { signal });
+  }
+  async function refresh() {
+    if (controller) return;
+    const ctl = new AbortController();
+    controller = ctl;
+    $("refresh").disabled = true;
+    $("stop").disabled = false;
+    let error = null;
+    try {
+      const staged = {};
+      for (let i = 0; i < ufCodes.length; i++) {
+        const uf = ufCodes[i];
+        $("status").textContent =
+          `Carregando estados compartilhados: ${i + 1}/28…`;
+        const d = await json(
+            `https://resultados.tse.jus.br/oficial/ele2026/6258/dados/${uf}/${uf}-c0001-e006258-u.json`,
+            AbortSignal.any([ctl.signal, AbortSignal.timeout(15000)]),
+          ),
+          s = R.parse(d, uf);
+        s.received = Date.now();
+        const result = R.append(officialH[uf] || [], s);
+        if (result.old)
+          throw Error(
+            "Foi recebida uma versão anterior de " + uf.toUpperCase(),
+          );
+        staged[uf] = result.h;
+        await new Promise((r) => setTimeout(r, 0));
+        ctl.signal.throwIfAborted();
+      }
+      const nationalData = ElectionModel.parseTSE(
+        await json(
+          "https://resultados.tse.jus.br/oficial/ele2026/6258/dados/br/br-c0001-e006258-u.json",
+          AbortSignal.any([ctl.signal, AbortSignal.timeout(15000)]),
+        ),
+      );
+      if (national && nationalData.timestamp < national.timestamp)
+        throw Error("Arquivo nacional anterior à última leitura");
+      if (mode === "official") {
+        officialH = staged;
+        national = nationalData;
+        lastFetch = Date.now();
+        scenario = null;
+        scenarioInputDirty = false;
+        capture();
+      }
+    } catch (e) {
+      error = ctl.signal.aborted
+        ? "Consulta cancelada. Leituras anteriores preservadas."
+        : "Falha ao carregar snapshot compartilhado: " +
+          e.message +
+          ". Leituras anteriores preservadas.";
+    } finally {
+      controller = null;
+      $("refresh").disabled = false;
+      $("stop").disabled = true;
+      render();
+      if (error && mode === "official") $("status").textContent = error;
+    }
+  }
+  async function checkShared(force = true) {
+    if (mode !== "official" || controller || sharedSync) return;
+    sharedSync = true;
+    const activeMode = mode;
+    $("status").textContent = "Verificando a publicação compartilhada…";
+    try {
+      const meta = await TSEClient.manifest(force);
+      const version = meta?.checkedAt || "unversioned";
+      if (version === sharedVersion && national) {
+        $("status").textContent =
+          "Publicação compartilhada sem mudanças desde a última verificação.";
+        await loadAbroad();
+        return;
+      }
+      const shared = await TSEClient.history();
+      if (mode !== activeMode) return;
+      officialH = shared.ufs || {};
+      national = shared.national?.at(-1) || null;
+      records.official = shared.projections || [];
+      sharedVersion = version;
+      scenario = null;
+      scenarioInputDirty = false;
+      capture();
+      render();
+      await loadAbroad();
+    } catch (e) {
+      if (mode === activeMode) {
+        render();
+        $("status").textContent =
+          "Falha ao carregar dados compartilhados: " +
+          e.message +
+          ". A leitura anterior foi preservada.";
+      }
+    } finally {
+      sharedSync = false;
+    }
+  }
+  function renderAbroad() {
+    const data = ExteriorModel.group(EXTERIOR_LOCATIONS, abroad[mode]),
+      q = normal($("countrySearch").value),
+      rows = data.rows
+        .filter((r) =>
+          normal(r.name + " " + r.places.map((p) => p.name).join(" ")).includes(
+            q,
+          ),
+        )
+        .sort(
+          (a, b) => b.valid - a.valid || a.name.localeCompare(b.name, "pt-BR"),
+        );
+    $("abroadNote").textContent =
+      mode === "demo"
+        ? "Resultado final real do primeiro turno por país. Esses dados não acompanham as etapas simuladas do Resumo."
+        : "Segundo turno: arquivos coletados pelo projeto. Países incompletos são identificados.";
+    $("abroadSummary").innerHTML =
+      `<p class="takeaway">${data.total.loaded}/${data.localities} localidades carregadas · ${data.total.loaded ? fmt(data.total.valid) : "—"} votos válidos${data.total.loaded < data.localities ? " · cobertura parcial" : ""}</p>`;
+    $("countryChart").innerHTML = !data.total.loaded
+      ? '<p class="empty">O cadastro de países está disponível, mas os resultados ainda não foram carregados. O lote do projeto é carregado automaticamente. Nenhum valor foi preenchido artificialmente.</p>'
+      : !rows.length
+        ? '<p class="empty">Nenhum país ou localidade encontrado.</p>'
+        : rows
+            .map((r) => {
+              const sum = r.a + r.b;
+              return `<div class="countryRow"><div class="countryTitle"><b>${esc(r.name)}</b><span>${fmt(r.valid)} votos válidos</span></div><small>${r.loaded}/${r.places.length} localidades${r.loaded < r.places.length ? " · PARCIAL" : ""}</small>${split(r.a, r.b)}<div class="countryValues"><span class="red">Lula ${sum ? pct((100 * r.a) / sum) : "—"}</span><span class="blue">Flávio ${sum ? pct((100 * r.b) / sum) : "—"}</span></div><details><summary>Ver localidades e números</summary><p>${r.places.map((p) => `${esc(p.name)}: ${p.snapshot ? fmt(p.snapshot.a) + " Lula / " + fmt(p.snapshot.b) + " Flávio · " + esc(p.snapshot.date) + " " + esc(p.snapshot.time) : "sem leitura"}`).join("<br>")}</p></details></div>`;
+            })
+            .join("");
+  }
+  async function loadAbroad() {
+    if (extController) return;
+    const ctl = new AbortController(),
+      target = mode,
+      turn = mode === "demo" ? 6257 : 6258;
+    extController = ctl;
+    $("loadAbroad").disabled = true;
+    $("stopAbroad").disabled = false;
+    let count = 0;
+    try {
+      const results = await TSEClient.cityResults("zz", turn);
+      ctl.signal.throwIfAborted();
+      for (const loc of EXTERIOR_LOCATIONS) {
+        ctl.signal.throwIfAborted();
+        const raw = results[loc.code];
+        if (raw) {
+          abroad[target][loc.code] = ExteriorModel.readResult(
+            raw,
+            String(turn),
+            loc.code,
+          );
+          count++;
+        }
+        if (count % 10 === 0) renderAbroad();
+        await new Promise((r) => setTimeout(r, 0));
+      }
+      $("abroadStatus").textContent =
+        `Lote compartilhado carregado: ${count}/${EXTERIOR_LOCATIONS.length} localidades.`;
+    } catch (e) {
+      $("abroadStatus").textContent = ctl.signal.aborted
+        ? "Carregamento cancelado. Dados recebidos foram preservados."
+        : "Não foi possível carregar o snapshot compartilhado: " +
+          e.message +
+          ". Dados anteriores foram preservados.";
+    } finally {
+      extController = null;
+      $("loadAbroad").disabled = false;
+      $("stopAbroad").disabled = true;
+      renderAbroad();
+    }
+  }
+  function compareContext() {
+    const active = $("tab-comparison").getAttribute("aria-selected") === "true";
+    document.querySelector(".sourceControl").hidden = active;
+    document.querySelector(".actionbar").hidden = active;
+    if (active)
+      $("sourceNote").textContent =
+        "COMPARATIVO OFICIAL ENTRE TURNOS · Esta aba usa somente resultados oficiais. A demonstração e os cenários das outras abas não alteram estes números.";
+  }
+  function activate(id, focus = false) {
+    document.querySelectorAll("[role=tab]").forEach((b) => {
+      const active = b.id === "tab-" + id;
+      b.setAttribute("aria-selected", String(active));
+      b.tabIndex = active ? 0 : -1;
+      $(b.getAttribute("aria-controls")).hidden = !active;
+      if (active && focus) b.focus();
+    });
+    history.replaceState(null, "", "#" + id);
+    render();
+  }
+  document.querySelectorAll("[role=tab]").forEach((button, i, all) => {
+    button.onclick = () => activate(button.getAttribute("aria-controls"));
+    button.onkeydown = (e) => {
+      let next;
+      if (e.key === "ArrowRight") next = (i + 1) % all.length;
+      if (e.key === "ArrowLeft") next = (i + all.length - 1) % all.length;
+      if (e.key === "Home") next = 0;
+      if (e.key === "End") next = all.length - 1;
+      if (next !== undefined) {
+        e.preventDefault();
+        activate(all[next].getAttribute("aria-controls"), true);
+      }
+    };
+  });
+  for (const id of ["advanceRegion", "scenarioRegion"])
+    $(id).innerHTML = Object.keys(R.groups)
+      .map((g) => `<option ${g === "Nordeste" ? "selected" : ""}>${g}</option>`)
+      .join("");
+  $("sourceMode").onchange = () => {
+    controller?.abort();
+    extController?.abort();
+    mode = $("sourceMode").value;
+    scenario = null;
+    scenarioInputDirty = false;
+    $("scenarioStatus").textContent = "";
+    $("abroadStatus").textContent = "";
+    render();
+    if (mode === "official") {
+      checkShared(true);
+      loadAbroad();
+    }
+  };
+  $("next").onclick = () => advance(ufCodes);
+  $("reset").onclick = resetDemo;
+  $("regionNext").onclick = () => advance(R.groups[$("advanceRegion").value]);
+  $("advanceRegion").onchange = render;
+  $("refresh").onclick = refresh;
+  $("stop").onclick = () => controller?.abort();
+  $("method").onchange = () => {
+    scenario = null;
+    scenarioInputDirty = false;
+    render();
+  };
+  $("scenarioRegion").onchange = () => {
+    scenario = null;
+    scenarioInputDirty = false;
+    $("scenarioStatus").textContent = "";
+    render();
+  };
+  $("sigma").oninput = () => {
+    $("sigmaLabel").textContent = $("sigma").value + " pontos percentuais";
+    clearTimeout(sigmaTimer);
+    sigmaTimer = setTimeout(render, 120);
+  };
+  for (const [from, to] of [
+    ["scenarioA", "scenarioB"],
+    ["scenarioB", "scenarioA"],
+  ])
+    $(from).oninput = () => {
+      scenarioInputDirty = true;
+      const v = $(from).value,
+        n = Number(v);
+      $(to).value =
+        v !== "" && n >= 0 && n <= 100
+          ? String(Number((100 - n).toFixed(6)))
+          : "";
+    };
+  $("calculate").onclick = () => {
+    const es = entries();
+    if (!S.eligible(histories(), es, mode === "demo")) return;
+    const v = $("scenarioA").value,
+      result = ScenarioModel.changeRegion(
+        es,
+        $("scenarioRegion").value,
+        v === "" ? NaN : Number(v),
+      );
+    $("scenarioStatus").className = result.error ? "error" : "";
+    if (result.error) {
+      $("scenarioStatus").textContent = result.error;
+      return;
+    }
+    scenario = result;
+    $("scenarioStatus").textContent =
+      `Cenário aplicado em ${scenario.region}: Lula ${pct(scenario.share)} / Flávio ${pct(100 - scenario.share)}.`;
+    render();
+  };
+  $("clearScenario").onclick = () => {
+    scenario = null;
+    scenarioInputDirty = false;
+    $("scenarioStatus").textContent =
+      "Alteração removida. Mostrando a projeção atual.";
+    render();
+  };
+  $("countrySearch").oninput = renderAbroad;
+  $("loadAbroad").onclick = loadAbroad;
+  $("stopAbroad").onclick = () => extController?.abort();
+  const d = FIRST_TURN_DATA.national;
+  $("fullFirstTurn").innerHTML =
+    `<p>Arquivo oficial gerado em ${esc(d.date)} às ${esc(d.time)}. Percentuais sobre todos os votos válidos.</p><div class="tableWrap"><table><caption>Brasil · primeiro turno de 2026</caption><thead><tr><th scope="col">Candidato</th><th scope="col">Votos</th><th scope="col">% dos válidos</th></tr></thead><tbody>${[
+      ...d.candidates,
+    ]
+      .sort((a, b) => b.votes - a.votes)
+      .map(
+        (c) =>
+          `<tr><td>${esc(c.name)}</td><td>${fmt(c.votes)}</td><td>${pct((100 * c.votes) / Number(d.v.vv))}</td></tr>`,
+      )
+      .join("")}</tbody></table></div>`;
+  mode = "demo";
+  resetDemo();
+  mode = "official";
+  $("sourceMode").value = "official";
+  const initial = location.hash.slice(1);
+  if (
+    ["summary", "regions", "simulate", "abroad", "comparison"].includes(initial)
+  )
+    activate(initial);
+  else render();
+  checkShared(true);
+  loadAbroad();
+  setInterval(() => {
+    if (mode === "official") checkShared(true);
+  }, 300000);
 })();

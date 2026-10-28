@@ -1,16 +1,248 @@
 <!doctype html>
-<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Painel Eleitoral 2026 — Projeção eleitoral 2026</title><meta name="description" content="Apuração presidencial e simulações transparentes de resultado final."><link rel="stylesheet" href="style.css"><link rel="stylesheet" href="regional.css"><link rel="stylesheet" href="help.css"><link rel="stylesheet" href="ux.css"><link rel="stylesheet" href="scenario.css"><link rel="stylesheet" href="exterior.css"><link rel="stylesheet" href="brand.css"></head>
-<body><header><a class="brand" href="#">◒ <span>Painel Eleitoral 2026</span></a><span class="edition">BRASIL / ELEIÇÕES 2026</span><span class="pill">Presidente · Brasil</span><a href="simples.html" style="font-size:13px;white-space:nowrap">Visão simples ↗</a><a href="simples.html#comparison" style="font-size:13px">Comparativo ↗</a></header>
-<main><div class="intro"><div><div class="eyebrow">OBSERVATÓRIO DA APURAÇÃO</div><h1>Entenda a apuração.<br>Explore os próximos votos.</h1><p>Veja o que já foi contado e o que pode acontecer se o ritmo continuar. Comece escolhendo a origem dos dados.</p></div><div class="mode" role="group" aria-label="Fonte dos dados"><button id="official" class="active" aria-pressed="true">2º turno · dados oficiais</button><button id="demo" aria-pressed="false">Demonstração com 1º turno</button></div></div>
-<div id="notice" class="notice" role="status"></div>
-<section class="summary"><div><span class="label">APURAÇÃO: SEÇÕES CONTADAS</span><strong id="progress">10,00%</strong><div class="track"><i id="progressbar"></i></div></div><div><span class="label">VOTOS DE LULA + FLÁVIO</span><strong id="votes">—</strong><small id="sections">—</small></div><div><span class="label">DATA OU ETAPA DA LEITURA</span><strong id="updated" class="smaller">—</strong><small id="status">—</small></div></section>
-<section class="workspace"><div class="results panel"><div class="sectionhead"><h2>Se o ritmo continuar, como termina?</h2><span class="tag">CENÁRIO CONDICIONAL</span></div><div class="controls"><label for="method">Como calcular</label><select id="method"><option value="recent">Ritmo dos últimos lotes</option><option value="average">Proporção dos votos já contados</option></select></div><div id="cards"></div><div class="projection"><div><span class="label">SE O RITMO CONTINUAR ATÉ 100%</span><h3 id="headline">—</h3><p id="explanation"></p></div><span class="arrow">↗</span></div><p class="footnote">Extrapolação matemática, sem probabilidade de vitória ou margem de erro. A ordem de chegada das regiões e o tamanho das seções podem alterar a tendência.</p></div>
-<aside class="panel simulator" id="simulator"><div class="eyebrow">LABORATÓRIO</div><h2>Avance a demonstração</h2><p>As etapas usam as proporções reais do 1º turno. São uma reprodução proporcional, não o histórico real da apuração.</p><div hidden><label for="share">Participação de A no próximo lote <output id="shareLabel">58%</output></label><input type="range" id="share" min="0" max="100" value="58"><div class="rangeLabels"><span>A · 0%</span><span>100% · A</span></div></div><label for="step">Quanto avançar</label><select id="step"><option value="2">+2 pontos na apuração</option><option value="5" selected>+5 pontos na apuração</option><option value="10">+10 pontos na apuração</option></select><button id="advance" class="primary">Avançar todas as regiões <span>→</span></button><button id="reset" class="secondary">Reiniciar demonstração</button><div class="miniNote">Este botão avança todos os estados. Para avançar apenas uma região, use o controle abaixo do mapa. Cada estado mantém as proporções registradas no 1º turno.</div></aside>
-<aside class="panel simulator" id="liveControls" hidden><div class="eyebrow">FONTE OFICIAL</div><h2>Leitura<br>compartilhada.</h2><p>Resultados oficiais do TSE, coletados pelo projeto para presidente, Brasil, segundo turno de 2026.</p><button id="refresh" class="primary">Carregar leitura compartilhada ↻</button><label class="check"><input type="checkbox" id="auto"> Verificar nova publicação a cada minuto</label><p class="miniNote">O projeto mantém o histórico comum no GitHub. O painel verifica novas publicações a cada minuto; a coleta central do GitHub Actions ocorre a cada cinco minutos, sujeita a atrasos. São necessárias duas leituras diferentes para estimar o ritmo recente.</p><a id="source" target="_blank" rel="noopener">Abrir arquivo oficial no TSE ↗</a></aside></section>
-<section class="panel history"><div class="sectionhead"><div><div class="eyebrow">LEITURA A LEITURA</div><h2>Histórico: compare as leituras</h2></div><button class="secondary" id="export">Exportar histórico ↓</button></div><div id="chart" aria-label="Evolução da projeção do candidato A"></div><div class="legend"><span class="dot"></span> Participação projetada de Lula, entre os dois <span class="dash">− −</span> 50% dos votos nos dois candidatos</div><div class="tablewrap"><table><thead><tr><th>Leitura</th><th>Seções</th><th>Votos de Lula</th><th>Votos de Flávio</th><th>Lula no lote</th><th>Projeção de Lula</th></tr></thead><tbody id="history"></tbody></table></div></section>
-<details class="panel methodology"><summary>Entenda o cálculo <span>+</span></summary><div><p><b>Média acumulada:</b> votos projetados = votos atuais ÷ fração de seções totalizadas. Com 10% apurado, 6 milhões para A e 4 milhões para B viram 60 milhões e 40 milhões. As participações permanecem em 60% e 40%.</p><p><b>Ritmo recente:</b> votos projetados = votos atuais + (variação de votos ÷ variação de seções totalizadas) × seções restantes. A janela usa até cinco leituras distintas, incluindo a atual; quando só há uma, não há projeção por ritmo.</p><p>Exemplo fictício: aos 10%, A tem 6 milhões e B tem 4 milhões. Aos 15%, A chega a 8 milhões e B a 7 milhões. O último lote trouxe 2 milhões para A e 3 milhões para B. Mantido esse ritmo, o resultado seria 42 milhões (42%) para A e 58 milhões (58%) para B.</p><p>Os modelos supõem que os votos por seção observados se repetirão nas seções restantes. Seções têm tamanhos diferentes e chegam em uma ordem que não é aleatória. Esta versão não corrige diferenças regionais, abstenção ou composição do eleitorado. Uma projeção mais robusta precisaria estimar o restante por UF ou município e ser validada com eleições anteriores.</p><p>Brancos e nulos não entram no denominador exibido. Na demonstração, Lula e Flávio são comparados entre si. Os votos dos demais candidatos permanecem no resumo do primeiro turno e não são transferidos para os dois. Dados oficiais com correções reiniciam a janela; falhas de conexão preservam a última leitura e são sinalizadas.</p><a href="https://www.tse.jus.br/eleicoes/informacoes-tecnicas-sobre-a-divulgacao-de-resultados" target="_blank" rel="noopener">Documentação técnica do TSE ↗</a></div></details>
-<footer><span>◒ Painel Eleitoral 2026</span><p>Projeto independente · Simulação não é resultado oficial.</p><a href="https://resultados.tse.jus.br" target="_blank" rel="noopener">Resultados oficiais ↗</a></footer></main><script src="model.js"></script><script src="first-turn-data.js"></script><script src="first-turn.js"></script><script src="tse-client.js"></script><script src="map-data.js"></script><script src="regional-model.js"></script><script src="first-turn-cities.js"></script><script src="regional.js"></script><script src="exterior-locations.js"></script><script src="exterior-model.js"></script><script src="exterior-first-turn-data.js"></script><script src="exterior.js"></script><script src="help.js"></script><script src="ux.js"></script><script src="scenario-model.js"></script><script src="scenario.js"></script><script src="app.js"></script></body></html>
-
-
-
-
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Painel Eleitoral 2026 — Projeção eleitoral 2026</title>
+    <meta
+      name="description"
+      content="Apuração presidencial e simulações transparentes de resultado final."
+    />
+    <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="regional.css" />
+    <link rel="stylesheet" href="help.css" />
+    <link rel="stylesheet" href="ux.css" />
+    <link rel="stylesheet" href="scenario.css" />
+    <link rel="stylesheet" href="exterior.css" />
+    <link rel="stylesheet" href="brand.css" />
+  </head>
+  <body>
+    <header>
+      <a class="brand" href="#">◒ <span>Painel Eleitoral 2026</span></a
+      ><span class="edition">BRASIL / ELEIÇÕES 2026</span
+      ><span class="pill">Presidente · Brasil</span
+      ><a href="simples.html" style="font-size: 13px; white-space: nowrap"
+        >Visão simples ↗</a
+      ><a href="simples.html#comparison" style="font-size: 13px"
+        >Comparativo ↗</a
+      >
+    </header>
+    <main>
+      <div class="intro">
+        <div>
+          <div class="eyebrow">OBSERVATÓRIO DA APURAÇÃO</div>
+          <h1>Entenda a apuração.<br />Explore os próximos votos.</h1>
+          <p>
+            Veja o que já foi contado e o que pode acontecer se o ritmo
+            continuar. Comece escolhendo a origem dos dados.
+          </p>
+        </div>
+        <div class="mode" role="group" aria-label="Fonte dos dados">
+          <button id="official" class="active" aria-pressed="true">
+            2º turno · dados oficiais</button
+          ><button id="demo" aria-pressed="false">
+            Demonstração com 1º turno
+          </button>
+        </div>
+      </div>
+      <div id="notice" class="notice" role="status"></div>
+      <section class="summary">
+        <div>
+          <span class="label">APURAÇÃO: SEÇÕES CONTADAS</span
+          ><strong id="progress">10,00%</strong>
+          <div class="track"><i id="progressbar"></i></div>
+        </div>
+        <div>
+          <span class="label">VOTOS DE LULA + FLÁVIO</span
+          ><strong id="votes">—</strong><small id="sections">—</small>
+        </div>
+        <div>
+          <span class="label">DATA OU ETAPA DA LEITURA</span
+          ><strong id="updated" class="smaller">—</strong
+          ><small id="status">—</small>
+        </div>
+      </section>
+      <section class="workspace">
+        <div class="results panel">
+          <div class="sectionhead">
+            <h2>Se o ritmo continuar, como termina?</h2>
+            <span class="tag">CENÁRIO CONDICIONAL</span>
+          </div>
+          <div class="controls">
+            <label for="method">Como calcular</label
+            ><select id="method">
+              <option value="recent">Ritmo dos últimos lotes</option>
+              <option value="average">Proporção dos votos já contados</option>
+            </select>
+          </div>
+          <div id="cards"></div>
+          <div class="projection">
+            <div>
+              <span class="label">SE O RITMO CONTINUAR ATÉ 100%</span>
+              <h3 id="headline">—</h3>
+              <p id="explanation"></p>
+            </div>
+            <span class="arrow">↗</span>
+          </div>
+          <p class="footnote">
+            Extrapolação matemática, sem probabilidade de vitória ou margem de
+            erro. A ordem de chegada das regiões e o tamanho das seções podem
+            alterar a tendência.
+          </p>
+        </div>
+        <aside class="panel simulator" id="simulator">
+          <div class="eyebrow">LABORATÓRIO</div>
+          <h2>Avance a demonstração</h2>
+          <p>
+            As etapas usam as proporções reais do 1º turno. São uma reprodução
+            proporcional, não o histórico real da apuração.
+          </p>
+          <div hidden>
+            <label for="share"
+              >Participação de A no próximo lote
+              <output id="shareLabel">58%</output></label
+            ><input type="range" id="share" min="0" max="100" value="58" />
+            <div class="rangeLabels">
+              <span>A · 0%</span><span>100% · A</span>
+            </div>
+          </div>
+          <label for="step">Quanto avançar</label
+          ><select id="step">
+            <option value="2">+2 pontos na apuração</option>
+            <option value="5" selected>+5 pontos na apuração</option>
+            <option value="10">+10 pontos na apuração</option></select
+          ><button id="advance" class="primary">
+            Avançar todas as regiões <span>→</span></button
+          ><button id="reset" class="secondary">Reiniciar demonstração</button>
+          <div class="miniNote">
+            Este botão avança todos os estados. Para avançar apenas uma região,
+            use o controle abaixo do mapa. Cada estado mantém as proporções
+            registradas no 1º turno.
+          </div>
+        </aside>
+        <aside class="panel simulator" id="liveControls" hidden>
+          <div class="eyebrow">FONTE OFICIAL</div>
+          <h2>Leitura<br />compartilhada.</h2>
+          <p>
+            Resultados oficiais do TSE, coletados pelo projeto para presidente,
+            Brasil, segundo turno de 2026.
+          </p>
+          <button id="refresh" class="primary">
+            Carregar leitura compartilhada ↻</button
+          ><label class="check"
+            ><input type="checkbox" id="auto" /> Verificar nova publicação a
+            cada 5 minutos</label
+          >
+          <p class="miniNote">
+            O projeto mantém o histórico comum no GitHub. O painel verifica
+            novas publicações a cada 5 minutos; a coleta central do GitHub
+            Actions ocorre a cada cinco minutos, sujeita a atrasos. São
+            necessárias duas leituras diferentes para estimar o ritmo recente.
+          </p>
+          <a id="source" target="_blank" rel="noopener"
+            >Abrir arquivo oficial no TSE ↗</a
+          >
+        </aside>
+      </section>
+      <section class="panel history">
+        <div class="sectionhead">
+          <div>
+            <div class="eyebrow">LEITURA A LEITURA</div>
+            <h2>Histórico: compare as leituras</h2>
+          </div>
+          <button class="secondary" id="export">Exportar histórico ↓</button>
+        </div>
+        <div id="chart" aria-label="Evolução da projeção do candidato A"></div>
+        <div class="legend">
+          <span class="dot"></span> Participação projetada de Lula, entre os
+          dois <span class="dash">− −</span> 50% dos votos nos dois candidatos
+        </div>
+        <div class="tablewrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Leitura</th>
+                <th>Seções</th>
+                <th>Votos de Lula</th>
+                <th>Votos de Flávio</th>
+                <th>Lula no lote</th>
+                <th>Projeção de Lula</th>
+              </tr>
+            </thead>
+            <tbody id="history"></tbody>
+          </table>
+        </div>
+      </section>
+      <details class="panel methodology">
+        <summary>Entenda o cálculo <span>+</span></summary>
+        <div>
+          <p>
+            <b>Média acumulada:</b> votos projetados = votos atuais ÷ fração de
+            seções totalizadas. Com 10% apurado, 6 milhões para A e 4 milhões
+            para B viram 60 milhões e 40 milhões. As participações permanecem em
+            60% e 40%.
+          </p>
+          <p>
+            <b>Ritmo recente:</b> votos projetados = votos atuais + (variação de
+            votos ÷ variação de seções totalizadas) × seções restantes. A janela
+            usa até cinco leituras distintas, incluindo a atual; quando só há
+            uma, não há projeção por ritmo.
+          </p>
+          <p>
+            Exemplo fictício: aos 10%, A tem 6 milhões e B tem 4 milhões. Aos
+            15%, A chega a 8 milhões e B a 7 milhões. O último lote trouxe 2
+            milhões para A e 3 milhões para B. Mantido esse ritmo, o resultado
+            seria 42 milhões (42%) para A e 58 milhões (58%) para B.
+          </p>
+          <p>
+            Os modelos supõem que os votos por seção observados se repetirão nas
+            seções restantes. Seções têm tamanhos diferentes e chegam em uma
+            ordem que não é aleatória. Esta versão não corrige diferenças
+            regionais, abstenção ou composição do eleitorado. Uma projeção mais
+            robusta precisaria estimar o restante por UF ou município e ser
+            validada com eleições anteriores.
+          </p>
+          <p>
+            Brancos e nulos não entram no denominador exibido. Na demonstração,
+            Lula e Flávio são comparados entre si. Os votos dos demais
+            candidatos permanecem no resumo do primeiro turno e não são
+            transferidos para os dois. Dados oficiais com correções reiniciam a
+            janela; falhas de conexão preservam a última leitura e são
+            sinalizadas.
+          </p>
+          <a
+            href="https://www.tse.jus.br/eleicoes/informacoes-tecnicas-sobre-a-divulgacao-de-resultados"
+            target="_blank"
+            rel="noopener"
+            >Documentação técnica do TSE ↗</a
+          >
+        </div>
+      </details>
+      <footer>
+        <span>◒ Painel Eleitoral 2026</span>
+        <p>Projeto independente · Simulação não é resultado oficial.</p>
+        <a href="https://resultados.tse.jus.br" target="_blank" rel="noopener"
+          >Resultados oficiais ↗</a
+        >
+      </footer>
+    </main>
+    <script src="result-policy.js"></script>
+    <script src="model.js"></script>
+    <script src="first-turn-data.js"></script>
+    <script src="first-turn.js"></script>
+    <script src="tse-client.js"></script>
+    <script src="map-data.js"></script>
+    <script src="regional-model.js"></script>
+    <script src="first-turn-cities.js"></script>
+    <script src="regional.js"></script>
+    <script src="exterior-locations.js"></script>
+    <script src="exterior-model.js"></script>
+    <script src="exterior-first-turn-data.js"></script>
+    <script src="exterior.js"></script>
+    <script src="help.js"></script>
+    <script src="ux.js"></script>
+    <script src="scenario-model.js"></script>
+    <script src="scenario.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

@@ -1,47 +1,556 @@
-(()=>{
-const M=RegionalModel,meta=MAP_DATA,byId=new Map(meta.cities.map(c=>[c.id,c])),cityNames=new Map(meta.cities.map(c=>[c.id,c.name.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()])),ufCodes=meta.ufs.map(u=>u.uf),$=id=>document.getElementById(id),num=n=>Math.round(n).toLocaleString('pt-BR'),per=n=>n.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%',escape=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let nationalDemoHistory=[],demo=true,ufHistory={},cityHistory={},liveUF={},liveCity={},selected=null,job=0,loading=false,view=[0,0,700,690],pathsById=null,dirtyCities=new Set(),allColorsDirty=true,paintedSelection=null,simulationTimer=null,cityCoverageNote='';
-const host=document.createElement('section');host.id='territory';host.className='panel territory';host.innerHTML=`<div class="sectionhead"><div><div class="eyebrow">O PESO DOS VOTOS QUE FALTAM</div><h2>De onde podem vir os próximos votos?</h2></div><span class="tag">CIDADES, ESTADOS E REGIÕES</span></div><p id="regionalNotice" class="notice" role="status"></p><div class="geoToolbar"><label>Estado <select id="mapUF"><option value="">Brasil inteiro</option>${meta.ufs.filter(u=>u.uf!=='zz').map(u=>`<option value="${u.uf}">${escape(u.name)}</option>`).join('')}</select></label><label>Buscar cidade <input id="citySearch" placeholder="Ex.: Salvador" type="search"></label><label>Cidade <select id="citySelect"><option value="">Selecione uma cidade</option></select></label></div><div class="geoLayout"><div><div class="mapShell"><svg id="brazilMap" viewBox="0 0 700 690" role="img" aria-label="Mapa municipal do Brasil: vermelho Lula, azul Flávio, cinza sem liderança observada"><g id="cityPaths">${meta.cities.map(c=>`<path d="${c.path}" data-id="${c.id}" fill="#d5d8db"><title>${escape(c.name)} / ${c.uf.toUpperCase()}</title></path>`).join('')}</g></svg><div class="mapButtons"><button id="mapReset" title="Ver Brasil inteiro">Brasil ↗</button></div></div><div class="mapLegend"><span><i style="background:#c84d4d"></i>Lula</span><span><i style="background:#387cc1"></i>Flávio Bolsonaro</span><span><i style="background:#d5d8db"></i>Sem dados / zero / empate</span></div><small>Cor = liderança entre Lula e Flávio, nunca probabilidade nem vencedor entre todos os candidatos do 1º turno. Malha simplificada do IBGE; exterior fora do mapa. Boa Esperança do Norte está disponível na busca, mas não tem contorno nesta malha.</small></div><aside class="cityPanel"><div class="eyebrow">DETALHE DO MUNICÍPIO</div><h3 id="cityTitle">Explore o mapa</h3><div id="cityInfo">Clique em uma cidade ou use a busca para ver votos, apuração e projeção local.</div><button id="loadCity" class="primary" hidden>Carregar dados desta cidade</button><div class="liveRegional" hidden><button id="loadUF" class="primary">Carregar dados dos estados e exterior</button><button id="loadCities" class="secondary">Carregar cidades da área escolhida</button><button id="stopRegions" class="secondary">Parar coleta</button></div><div id="regionalLoadStatus" role="status" class="miniNote"></div></aside></div><div class="regionalControls"><label>Como calcular por estado <select id="regionalMethod"><option value="recent">Ritmo dos últimos lotes por estado</option><option value="average">Proporção já contada em cada estado</option></select></label><div id="demoRegionControls"><label>Região da próxima leitura <select id="demoRegion">${Object.keys(M.groups).map(g=>`<option ${g==='Nordeste'?'selected':''}>${g}</option>`).join('')}</select></label><label hidden>Lula no próximo lote <input id="regionalShare" type="range" min="0" max="100" value="70"><output id="regionalShareLabel">70%</output></label><button id="advanceRegion" class="primary">Avançar 5 pontos nesta região</button><button id="resetRegions" class="secondary">Reiniciar cenário territorial</button></div></div><div class="regionalTotals" id="regionalTotals"></div><div class="tablewrap"><table><thead><tr><th>Região</th><th>Contagem concluída</th><th>Lula agora</th><th>Flávio agora</th><th>Votos por seção: Lula / Flávio</th><th>Em 100% entre os dois: Lula / Flávio</th><th>Quem ganha mais votos no restante?</th></tr></thead><tbody id="regionRows"></tbody></table></div><div id="turnaround" class="projection"></div><details class="scenarioBox"><summary>Avançado: explorar cenários possíveis</summary><div class="eyebrow">ANÁLISE EXPERIMENTAL DE CENÁRIOS</div><h2>Em quantos cenários cada um termina à frente?</h2><p>Frequência em 4.000 simulações, condicionada às hipóteses abaixo. <b>Não é uma chance de eleição calibrada.</b></p><label for="uncertainty">Incerteza sobre a participação nos votos restantes: <output id="sigmaLabel">8 pontos percentuais</output></label><input id="uncertainty" type="range" min="1" max="25" value="8"><div id="chances"></div><p id="chanceRange"></p><small>O controle define o desvio-padrão inicial. Erros são correlacionados dentro da mesma região e parcialmente entre regiões. Alterar esse valor pode mudar muito os percentuais.</small></details><details class="regionalMethodology"><summary>Hipóteses, cobertura e limitações</summary><p>O mapa usa votos municipais observados. A projeção nacional usa os 26 estados, o Distrito Federal e o exterior, sem somar municípios novamente. Cada estado projeta votos atuais + votos por seção na janela × seções restantes. A janela inclui até cinco leituras distintas. O eleitorado das seções restantes limita o volume previsto; não estimamos comparecimento separadamente. A média acumulada é uma alternativa explícita, sem substituir silenciosamente o ritmo recente.</p><p>A projeção nacional exige dados suficientes de todos os 26 estados, do Distrito Federal e do exterior. Com dados oficiais, a coleta completa deve ter sido recebida nos últimos 5 minutos e as datas dos arquivos devem ter diferença de até 15 minutos. Cobertura parcial é mostrada como parcial. As leituras são coletadas pelo workflow central e compartilhadas. Brasil, estados e exterior são consultados a cada cinco minutos; municípios são atualizados em lotes ao longo de cerca de duas horas. Locais sem arquivo disponível continuam cinza.</p><p>Nas simulações, o volume restante projetado de cada estado é fixo. A participação de Lula nesses votos recebe um erro normal com desvio σ × √(1 − fração apurada), com componente nacional 0,5 e componente regional √0,75; a participação é limitada entre 0 e 100%. Flávio recebe o restante. A faixa exibida contém 90% dos cenários, não é um intervalo de confiança validado. Não há ajuste histórico, backtest, modelo de comparecimento ou estimativa empírica de σ nesta versão. Não use a frequência como probabilidade real ou anúncio de eleito.</p><p>O avanço regional e o resumo nacional usam uma única demonstração. Alterar uma região atualiza também a contagem nacional. A base é o resultado real do primeiro turno de 2026. Cada estado avança proporcionalmente sobre seu total final; não há histórico real de lotes nem transferência dos votos dos demais candidatos. O mapa mostra o resultado municipal completo entre Lula e Flávio, separado das etapas simuladas dos estados. O histórico desta seção fica na memória até fechar a página.</p><a href="https://servicodados.ibge.gov.br/api/docs/malhas?versao=3" target="_blank" rel="noopener">Malhas do IBGE ↗</a> · <a href="https://www.tse.jus.br/eleicoes/informacoes-tecnicas-sobre-a-divulgacao-de-resultados" target="_blank" rel="noopener">Documentação do TSE ↗</a></details><button id="exportRegions" class="secondary">Exportar leituras territoriais ↓</button>`;
-document.querySelector('.history').before(host);
-function message(s){$('regionalLoadStatus').textContent=s;}
-function sumSnapshots(list){const s={a:0,b:0,st:0,ts:0,remaining:0,time:0};for(const x of list)for(const k of ['a','b','st','ts','remaining'])s[k]+=x[k];s.p=100*s.st/s.ts;s.label='Etapa proporcional do primeiro turno';return s;}
-function nationalSnapshot(index){const ss=ufCodes.map(uf=>index===undefined?ufHistory[uf].at(-1):ufHistory[uf][index]);const s=sumSnapshots(ss);const keys=Object.keys(ss[0].turnout);s.turnout=Object.fromEntries(keys.map(k=>[k,ss.some(x=>x.turnout[k]===null)?null:ss.reduce((n,x)=>n+x.turnout[k],0)]));s.total=s.ts;s.counted=s.st;s.date=FIRST_TURN_DATA.national.date;s.label='Etapa simulada · '+per(s.p);s.otherVotes=ss.reduce((n,x)=>n+x.otherVotes,0);return s;}
-function emitNational(){window.dispatchEvent(new CustomEvent('horizonte-demo-snapshot',{detail:nationalDemoHistory}));}
-function advanceDemo(ufs,step=5){for(const uf of ufs){const h=ufHistory[uf],next=Math.min(100,h.at(-1).p+step);if(next!==h.at(-1).p)h.push(FirstTurn.snapshot(FIRST_TURN_DATA.ufs[uf],next));}const s=nationalSnapshot();if(s.st!==nationalDemoHistory.at(-1)?.st)nationalDemoHistory.push(s);emitNational();render();}
-function reset(){cityHistory={};for(const [id,base] of Object.entries(FIRST_TURN_CITIES)){const snap=FirstTurn.snapshot(base,100);snap.label=base.date+' '+base.time;cityHistory[id]=[snap];}allColorsDirty=true;ufHistory={};for(const uf of ufCodes)ufHistory[uf]=[FirstTurn.snapshot(FIRST_TURN_DATA.ufs[uf],5),FirstTurn.snapshot(FIRST_TURN_DATA.ufs[uf],10)];nationalDemoHistory=[nationalSnapshot(0),nationalSnapshot(1)];emitNational();render();}
-function paint(){
- if(!pathsById)pathsById=new Map([...document.querySelectorAll('#cityPaths path')].map(path=>[path.dataset.id,path]));
- const paintCity=id=>{const path=pathsById.get(id);if(!path)return;const c=cityHistory[id]?.at(-1),valid=c&&Number.isFinite(c.a)&&Number.isFinite(c.b)&&c.a+c.b>0,fill=!valid||c.a===c.b?'#d5d8db':c.a>c.b?'#c84d4d':'#387cc1';if(path.getAttribute('fill')!==fill)path.setAttribute('fill',fill);};
- if(allColorsDirty){for(const id of pathsById.keys())paintCity(id);allColorsDirty=false;dirtyCities.clear();}
- else if(dirtyCities.size){for(const id of dirtyCities)paintCity(id);dirtyCities.clear();}
- if(paintedSelection!==selected){if(paintedSelection)pathsById.get(paintedSelection)?.classList.remove('selectedCity');if(selected)pathsById.get(selected)?.classList.add('selectedCity');paintedSelection=selected;}
-}
-function options(){const uf=$('mapUF').value,q=$('citySearch').value.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();const cities=meta.cities.filter(c=>(!uf||c.uf===uf)&&cityNames.get(c.id).includes(q));$('citySelect').innerHTML='<option value="">Selecione ('+cities.length+' cidades)</option>'+cities.slice(0,600).map(c=>`<option value="${c.id}">${escape(c.name)} / ${c.uf.toUpperCase()}</option>`).join('');if(cities.length>600)$('citySelect').insertAdjacentHTML('beforeend','<option disabled>Refine a busca para ver as demais cidades</option>');}
-function detail(){const c=byId.get(selected);$('loadCity').hidden=demo||!c;if(!c)return;$('cityTitle').textContent=c.name+' / '+c.uf.toUpperCase();const h=cityHistory[c.id],s=h?.at(-1),e=M.estimate(h,$('regionalMethod').value);$('cityInfo').innerHTML=s?`<p>${demo?'1º TURNO · RESULTADO OFICIAL DE '+escape(s.label):escape(s.label)+' · Brasília'}</p><strong>${per(s.p)} apurado</strong><p><b class="redText">Lula: ${num(s.a)} (${s.a+s.b?per(100*s.a/(s.a+s.b)):'—'})</b><br><b class="blueText">Flávio: ${num(s.b)} (${s.a+s.b?per(100*s.b/(s.a+s.b)):'—'})</b></p><p>Projeção local: ${e?per(100*e.a/(e.a+e.b))+' Lula / '+per(100*e.b/(e.a+e.b))+' Flávio':'sem base suficiente para o método selecionado'}</p><small>${demo?'Comparação entre Lula e Flávio; os demais candidatos não entram neste percentual.':s.received?'Recebido '+new Date(s.received).toLocaleTimeString('pt-BR'):''}</small>`:'Sem leitura municipal. Consulte a cidade para obter votos e apuração.';}
-function estimates(){return ufCodes.map(uf=>({uf,est:M.estimate(ufHistory[uf],$('regionalMethod').value)}));}
-function render(){paint();detail();$('regionalNotice').textContent=demo?'DEMONSTRAÇÃO COM 1º TURNO · O mapa mostra o resultado municipal final entre Lula e Flávio. A simulação abaixo avança os estados separadamente, preservando as proporções reais de cada um. Não é o histórico da apuração nem uma previsão do segundo turno.':'DADOS DO TSE · O mapa carrega automaticamente os snapshots municipais do segundo turno; a projeção por estado usa o histórico compartilhado.'+(cityCoverageNote?' · '+cityCoverageNote:'');const entries=estimates(),ready=entries.filter(e=>e.est),current=ufCodes.map(uf=>ufHistory[uf]?.at(-1)).filter(Boolean);let pa=0,pb=0;for(const {est:e} of ready){pa+=e.a;pb+=e.b;}const a=current.reduce((n,s)=>n+s.a,0),b=current.reduce((n,s)=>n+s.b,0);const fresh=demo||(current.length===28&&current.every(s=>Date.now()-s.received<M.FRESH_MS)&&Math.max(...current.map(s=>s.time))-Math.min(...current.map(s=>s.time))<=900000);const complete=ready.length===28&&fresh;
- $('regionalTotals').innerHTML=`<div><span class="label">LULA AGORA ${current.length<28?'· PARCIAL':''}</span><strong class="redText">${a+b?per(a/(a+b)*100):'—'}</strong><small>${num(a)} votos</small></div><div><span class="label">FLÁVIO AGORA ${current.length<28?'· PARCIAL':''}</span><strong class="blueText">${a+b?per(b/(a+b)*100):'—'}</strong><small>${num(b)} votos</small></div><div><span class="label">PROJEÇÃO TERRITORIAL · LULA / FLÁVIO</span><strong>${complete?per(pa/(pa+pb)*100)+' / '+per(pb/(pa+pb)*100):'Aguardando base'}</strong><small>${ready.length}/28 unidades com dados para projetar${!fresh?' · coleta ausente ou defasada':''}</small></div>`;
- $('regionRows').innerHTML=Object.entries(M.groups).map(([group,ufs])=>{const ss=ufs.map(u=>ufHistory[u]?.at(-1)).filter(Boolean),ee=entries.filter(e=>ufs.includes(e.uf)&&e.est).map(e=>e.est),c=sumSnapshots(ss),valid=ss.length===ufs.length&&ee.length===ufs.length;const x=ee.reduce((v,e)=>v+e.a,0),y=ee.reduce((v,e)=>v+e.b,0),rateA=ee.reduce((v,e)=>v+e.rateA*e.current.ts,0)/(ee.reduce((v,e)=>v+e.current.ts,0)||1),rateB=ee.reduce((v,e)=>v+e.rateB*e.current.ts,0)/(ee.reduce((v,e)=>v+e.current.ts,0)||1);return `<tr><td>${group}${valid?'':' · parcial'}</td><td>${ss.length===ufs.length?per(c.p):'—'}</td><td>${num(c.a)}</td><td>${num(c.b)}</td><td>${valid?num(rateA)+' · '+num(rateB):'—'}</td><td>${valid?per(x/(x+y)*100)+' · '+per(y/(x+y)*100):'—'}</td><td>${valid?num(Math.abs((x-c.a)-(y-c.b)))+' para '+((x-c.a)>=(y-c.b)?'Lula':'Flávio'):'—'}</td></tr>`;}).join('');
- const upside=ready.map(({uf,est:e})=>({uf,saldo:e.ra-e.rb})).sort((x,y)=>Math.abs(y.saldo)-Math.abs(x.saldo));$('turnaround').textContent=complete?`${(pa>pb)!==(a>b)?'Virada no cenário: ':'Mantido o cenário: '}${pa===pb?'empate':pa>pb?'Lula termina à frente':'Flávio termina à frente'}. Diferença atual: ${num(Math.abs(a-b))} votos; projetada: ${num(Math.abs(pa-pb))}. Maior diferença nos votos restantes por estado: ${upside[0].uf.toUpperCase()}, ${num(Math.abs(upside[0].saldo))} a favor de ${upside[0].saldo>=0?'Lula':'Flávio'}.`:'Ainda não podemos calcular o total: consulte todos os estados e o exterior. Para medir o ritmo, precisamos de duas leituras com avanço na apuração.';
- $('advanceRegion').disabled=demo&&M.groups[$('demoRegion').value].every(uf=>ufHistory[uf].at(-1).p>=100);const sigma=Number($('uncertainty').value);$('sigmaLabel').textContent=sigma+' pontos percentuais';const sim=complete?M.simulate(entries,sigma):null;$('chances').innerHTML=sim?`<div class="chance redText"><b>${per(sim.a)}</b><span>Lula à frente nos cenários</span></div><div class="chance blueText"><b>${per(sim.b)}</b><span>Flávio à frente nos cenários</span></div><div class="chance"><b>${per(sim.tie)}</b><span>Empate nos cenários</span></div>`:'Sem cobertura suficiente para simular o resultado nacional.';$('chanceRange').textContent=sim?`Faixa com 90% dos cenários para Lula: ${per(sim.low)} a ${per(sim.high)} dos votos. ${demo?'Base: primeiro turno real, com avanço proporcional simulado. ':''}Frequências dependem do modelo e do controle de incerteza; mesmo 100% não significa certeza real.`:'';
- window.dispatchEvent(new CustomEvent('horizonte-territory-estimates',{detail:{entries,complete,demo,sigma}}));
-}
-window.addEventListener('horizonte-territory-request',()=>render());
-function setBusy(v){loading=v;for(const id of ['loadUF','loadCities','loadCity'])$(id).disabled=v;}
-async function get(uf,code){const file=uf+(code||'')+'-c0001-e006258-u.json',r=await fetch(`https://resultados.tse.jus.br/oficial/ele2026/6258/dados/${uf}/${file}`,{cache:'no-cache',signal:AbortSignal.timeout(15000)});if(!r.ok)throw Error(`HTTP ${r.status} em ${uf}${code||''}`);const s=M.parse(await r.json(),uf,code);s.received=Date.now();return s;}
-async function collect(tasks,type){if(loading||demo)return;setBusy(true);const ticket=++job;let done=0,corrections=0;try{for(const t of tasks){if(ticket!==job||demo)break;let s;try{s=await get(t.uf,t.code);}catch(e){if(type==='city'&&/HTTP 404/.test(e.message)){done++;message(`${done}/${tasks.length} localidades carregadas; algumas ainda não têm snapshot central.`);continue;}throw e;}if(ticket!==job||demo)break;const target=type==='uf'?liveUF:liveCity;if(type==='city'){const shared=await TSEClient.cityHistory(t.uf,t.code);if(shared.length)target[t.id]=shared;}const result=M.append(target[t.id]||[],s);if(result.old)throw Error('Arquivo antigo recebido: coleta interrompida');if(result.reset)corrections++;target[t.id]=result.h;if(type==='city')dirtyCities.add(t.id);done++;message(`${done}/${tasks.length} leituras recebidas${corrections?' · '+corrections+' janelas reiniciadas por correção':''}. Os municípios são fornecidos pelo lote central agendado do projeto.`);if(done%10===0||type==='uf')render();await new Promise(resolve=>setTimeout(resolve,0));}if(ticket===job)message(`Coleta concluída: ${done}/${tasks.length}. ${corrections} janelas reiniciadas. ${type==='uf'?'Consulte novamente após avanço para medir o ritmo.':''}`);}catch(e){if(ticket===job)message(`Coleta interrompida após ${done}/${tasks.length}: ${e.message}. Dados anteriores preservados com data. O snapshot central do projeto pode estar ausente ou desatualizado.`);}finally{setBusy(false);render();}}
-function select(id){selected=id;detail();paint();$('citySelect').value=id;}
-function zoom(){const uf=$('mapUF').value;view=[0,0,700,690];if(uf){const bounds=meta.cities.filter(c=>c.uf===uf&&c.path).map(c=>document.querySelector(`#cityPaths path[data-id="${c.id}"]`).getBBox());const x=Math.min(...bounds.map(b=>b.x)),y=Math.min(...bounds.map(b=>b.y)),r=Math.max(...bounds.map(b=>b.x+b.width)),b=Math.max(...bounds.map(b=>b.y+b.height));view=[x-8,y-8,r-x+16,b-y+16];}$('brazilMap').setAttribute('viewBox',view.join(' '));}
-let territoryLoading=false,sharedTerritoryVersion=null;
-async function loadSharedTerritory(force=true){if(demo||territoryLoading)return;territoryLoading=true;try{const[manifest,localitiesManifest]=await Promise.all([TSEClient.manifest(force),TSEClient.localitiesManifest(force)]);const version=`${manifest?.checkedAt||'unversioned'}|${localitiesManifest?.checkedAt||'no-localities'}`;if(version===sharedTerritoryVersion)return;const shared=await TSEClient.history(),ufs=[...new Set(meta.cities.filter(c=>c.code).map(c=>c.uf))];const packs=await Promise.all(ufs.map(async uf=>{const [results,histories]=await Promise.all([TSEClient.cityResults(uf,6258).catch(()=>({})),TSEClient.cityHistories(uf).catch(()=>({}))]);return{uf,results,histories};}));if(demo)return;const dataByUf=new Map(packs.map(p=>[p.uf,p]));const nextCity={...liveCity};const received=Date.parse(localitiesManifest?.checkedAt||manifest?.checkedAt||shared.updatedAt||'')||Date.now();let loaded=0,withVotes=0,invalid=0;for(const city of meta.cities){if(!city.code)continue;const pack=dataByUf.get(city.uf),raw=pack?.results?.[city.code];let history=Array.isArray(pack?.histories?.[city.code])?[...pack.histories[city.code]]:[...(liveCity[city.id]||[])];if(raw){try{const snapshot=M.parse(raw,city.uf,city.code);snapshot.received=received;const result=M.append(history,snapshot);if(!result.old)history=result.h;}catch{invalid++;}}if(history.length){nextCity[city.id]=history;loaded++;if((history.at(-1)?.st||0)>0)withVotes++;}}liveUF=shared.ufs||{};ufHistory=liveUF;liveCity=nextCity;cityHistory=nextCity;allColorsDirty=true;sharedTerritoryVersion=version;cityCoverageNote=`${withVotes}/${meta.cities.filter(c=>c.code).length} municípios com votos apurados; ${loaded-withVotes} ainda zerados · lote ${new Date(received).toLocaleString('pt-BR')}`;render();message(`Snapshots municipais: ${loaded}/${meta.cities.filter(c=>c.code).length} carregados, ${withVotes} com votos apurados${invalid?` · ${invalid} arquivos inválidos ignorados`:''}.`);}catch(e){message('Não foi possível carregar os snapshots territoriais compartilhados: '+e.message);}finally{territoryLoading=false;}}
-function switchMode(next){job++;demo=next==='demo';document.querySelectorAll('.liveRegional').forEach(e=>e.hidden=demo);$('demoRegionControls').hidden=!demo;if(demo)reset();else{ufHistory=liveUF;cityHistory=liveCity;allColorsDirty=true;render();message('Carregando os dados oficiais do segundo turno para o mapa…');loadSharedTerritory(true);}}
-window.addEventListener('horizonte-mode',e=>switchMode(e.detail));$('mapUF').onchange=()=>{options();zoom();};$('citySearch').oninput=options;$('citySelect').onchange=()=>select($('citySelect').value);$('cityPaths').onclick=e=>{const id=e.target.dataset.id;if(id)select(id);};$('mapReset').onclick=()=>{$('mapUF').value='';zoom();options();};$('regionalMethod').onchange=render;$('uncertainty').oninput=()=>{$('sigmaLabel').textContent=$('uncertainty').value+' pontos percentuais';clearTimeout(simulationTimer);simulationTimer=setTimeout(render,120);};$('loadUF').onclick=()=>collect(ufCodes.map(uf=>({id:uf,uf})), 'uf');$('loadCity').onclick=()=>{const c=byId.get(selected);if(c)collect([c],'city');};$('loadCities').onclick=()=>collect(meta.cities.filter(c=>c.code&&(!$('mapUF').value||c.uf===$('mapUF').value)),'city');$('stopRegions').onclick=()=>{job++;message('Parada solicitada. A requisição em andamento será descartada.');};$('resetRegions').onclick=reset;$('demoRegion').onchange=render;$('regionalShare').oninput=()=>$('regionalShareLabel').textContent=$('regionalShare').value+'%';
- $('advanceRegion').onclick=()=>advanceDemo(M.groups[$('demoRegion').value],5);
- window.addEventListener('horizonte-demo-advance',e=>{if(demo)advanceDemo(ufCodes,e.detail);});window.addEventListener('horizonte-demo-reset',()=>{if(demo)reset();});
- $('exportRegions').onclick=()=>{const a=document.createElement('a'),url=URL.createObjectURL(new Blob([JSON.stringify({mode:demo?'demonstracao-primeiro-turno':'oficial',method:$('regionalMethod').value,sigma:Number($('uncertainty').value),ufHistory,cityHistory},null,2)],{type:'application/json'}));a.href=url;a.download='painel-eleitoral-2026-territorios.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};options();reset();setInterval(()=>{if(!demo&&!loading)loadSharedTerritory(true);},60000);
+(() => {
+  const M = RegionalModel,
+    meta = MAP_DATA,
+    byId = new Map(meta.cities.map((c) => [c.id, c])),
+    cityNames = new Map(
+      meta.cities.map((c) => [
+        c.id,
+        c.name
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .toLowerCase(),
+      ]),
+    ),
+    ufCodes = meta.ufs.map((u) => u.uf),
+    $ = (id) => document.getElementById(id),
+    num = (n) => Math.round(n).toLocaleString("pt-BR"),
+    per = (n) =>
+      n.toLocaleString("pt-BR", {
+        minimumFractionDigits: 1,
+        maximumFractionDigits: 1,
+      }) + "%",
+    escape = (s) =>
+      String(s).replace(
+        /[&<>"']/g,
+        (c) =>
+          ({
+            "&": "&amp;",
+            "<": "&lt;",
+            ">": "&gt;",
+            '"': "&quot;",
+            "'": "&#39;",
+          })[c],
+      );
+  let nationalDemoHistory = [],
+    demo = true,
+    ufHistory = {},
+    cityHistory = {},
+    liveUF = {},
+    liveCity = {},
+    selected = null,
+    job = 0,
+    loading = false,
+    view = [0, 0, 700, 690],
+    pathsById = null,
+    dirtyCities = new Set(),
+    allColorsDirty = true,
+    paintedSelection = null,
+    simulationTimer = null,
+    cityCoverageNote = "";
+  const host = document.createElement("section");
+  host.id = "territory";
+  host.className = "panel territory";
+  host.innerHTML = `<div class="sectionhead"><div><div class="eyebrow">O PESO DOS VOTOS QUE FALTAM</div><h2>De onde podem vir os próximos votos?</h2></div><span class="tag">CIDADES, ESTADOS E REGIÕES</span></div><p id="regionalNotice" class="notice" role="status"></p><div class="geoToolbar"><label>Estado <select id="mapUF"><option value="">Brasil inteiro</option>${meta.ufs
+    .filter((u) => u.uf !== "zz")
+    .map((u) => `<option value="${u.uf}">${escape(u.name)}</option>`)
+    .join(
+      "",
+    )}</select></label><label>Buscar cidade <input id="citySearch" placeholder="Ex.: Salvador" type="search"></label><label>Cidade <select id="citySelect"><option value="">Selecione uma cidade</option></select></label></div><div class="geoLayout"><div><div class="mapShell"><svg id="brazilMap" viewBox="0 0 700 690" role="img" aria-label="Mapa municipal do Brasil: vermelho Lula, azul Flávio, cinza sem liderança observada"><g id="cityPaths">${meta.cities.map((c) => `<path d="${c.path}" data-id="${c.id}" fill="#d5d8db"><title>${escape(c.name)} / ${c.uf.toUpperCase()}</title></path>`).join("")}</g></svg><div class="mapButtons"><button id="mapReset" title="Ver Brasil inteiro">Brasil ↗</button></div></div><div class="mapLegend"><span><i style="background:#c84d4d"></i>Lula</span><span><i style="background:#387cc1"></i>Flávio Bolsonaro</span><span><i style="background:#d5d8db"></i>Sem dados / zero / empate</span></div><small>Cor = liderança entre Lula e Flávio, nunca probabilidade nem vencedor entre todos os candidatos do 1º turno. Malha simplificada do IBGE; exterior fora do mapa. Boa Esperança do Norte está disponível na busca, mas não tem contorno nesta malha.</small></div><aside class="cityPanel"><div class="eyebrow">DETALHE DO MUNICÍPIO</div><h3 id="cityTitle">Explore o mapa</h3><div id="cityInfo">Clique em uma cidade ou use a busca para ver votos, apuração e projeção local.</div><button id="loadCity" class="primary" hidden>Carregar dados desta cidade</button><div class="liveRegional" hidden><button id="loadUF" class="primary">Carregar dados dos estados e exterior</button><button id="loadCities" class="secondary">Carregar cidades da área escolhida</button><button id="stopRegions" class="secondary">Parar coleta</button></div><div id="regionalLoadStatus" role="status" class="miniNote"></div></aside></div><div class="regionalControls"><label>Como calcular por estado <select id="regionalMethod"><option value="recent">Ritmo dos últimos lotes por estado</option><option value="average">Proporção já contada em cada estado</option></select></label><div id="demoRegionControls"><label>Região da próxima leitura <select id="demoRegion">${Object.keys(
+    M.groups,
+  )
+    .map((g) => `<option ${g === "Nordeste" ? "selected" : ""}>${g}</option>`)
+    .join(
+      "",
+    )}</select></label><label hidden>Lula no próximo lote <input id="regionalShare" type="range" min="0" max="100" value="70"><output id="regionalShareLabel">70%</output></label><button id="advanceRegion" class="primary">Avançar 5 pontos nesta região</button><button id="resetRegions" class="secondary">Reiniciar cenário territorial</button></div></div><div class="regionalTotals" id="regionalTotals"></div><div class="tablewrap"><table><thead><tr><th>Região</th><th>Contagem concluída</th><th>Lula agora</th><th>Flávio agora</th><th>Votos por seção: Lula / Flávio</th><th>Em 100% entre os dois: Lula / Flávio</th><th>Quem ganha mais votos no restante?</th></tr></thead><tbody id="regionRows"></tbody></table></div><div id="turnaround" class="projection"></div><details class="scenarioBox"><summary>Avançado: explorar cenários possíveis</summary><div class="eyebrow">ANÁLISE EXPERIMENTAL DE CENÁRIOS</div><h2>Em quantos cenários cada um termina à frente?</h2><p>Frequência em 4.000 simulações, condicionada às hipóteses abaixo. <b>Não é uma chance de eleição calibrada.</b></p><label for="uncertainty">Incerteza sobre a participação nos votos restantes: <output id="sigmaLabel">8 pontos percentuais</output></label><input id="uncertainty" type="range" min="1" max="25" value="8"><div id="chances"></div><p id="chanceRange"></p><small>O controle define o desvio-padrão inicial. Erros são correlacionados dentro da mesma região e parcialmente entre regiões. Alterar esse valor pode mudar muito os percentuais.</small></details><details class="regionalMethodology"><summary>Hipóteses, cobertura e limitações</summary><p>O mapa usa votos municipais observados. A projeção nacional usa os 26 estados, o Distrito Federal e o exterior, sem somar municípios novamente. Cada estado projeta votos atuais + votos por seção na janela × seções restantes. A janela inclui até cinco leituras distintas. O eleitorado das seções restantes limita o volume previsto; não estimamos comparecimento separadamente. A média acumulada é uma alternativa explícita, sem substituir silenciosamente o ritmo recente.</p><p>A projeção nacional exige dados suficientes de todos os 26 estados, do Distrito Federal e do exterior. Com dados oficiais, a coleta completa deve ter sido recebida nos últimos 5 minutos e as datas dos arquivos devem ter diferença de até 15 minutos. Cobertura parcial é mostrada como parcial. As leituras são coletadas pelo workflow central e compartilhadas. Brasil, estados e exterior são consultados a cada cinco minutos; municípios são atualizados em lotes ao longo de cerca de duas horas. Locais sem arquivo disponível continuam cinza.</p><p>Nas simulações, o volume restante projetado de cada estado é fixo. A participação de Lula nesses votos recebe um erro normal com desvio σ × √(1 − fração apurada), com componente nacional 0,5 e componente regional √0,75; a participação é limitada entre 0 e 100%. Flávio recebe o restante. A faixa exibida contém 90% dos cenários, não é um intervalo de confiança validado. Não há ajuste histórico, backtest, modelo de comparecimento ou estimativa empírica de σ nesta versão. Não use a frequência como probabilidade real ou anúncio de eleito.</p><p>O avanço regional e o resumo nacional usam uma única demonstração. Alterar uma região atualiza também a contagem nacional. A base é o resultado real do primeiro turno de 2026. Cada estado avança proporcionalmente sobre seu total final; não há histórico real de lotes nem transferência dos votos dos demais candidatos. O mapa mostra o resultado municipal completo entre Lula e Flávio, separado das etapas simuladas dos estados. O histórico desta seção fica na memória até fechar a página.</p><a href="https://servicodados.ibge.gov.br/api/docs/malhas?versao=3" target="_blank" rel="noopener">Malhas do IBGE ↗</a> · <a href="https://www.tse.jus.br/eleicoes/informacoes-tecnicas-sobre-a-divulgacao-de-resultados" target="_blank" rel="noopener">Documentação do TSE ↗</a></details><button id="exportRegions" class="secondary">Exportar leituras territoriais ↓</button>`;
+  document.querySelector(".history").before(host);
+  function message(s) {
+    $("regionalLoadStatus").textContent = s;
+  }
+  function sumSnapshots(list) {
+    const s = { a: 0, b: 0, st: 0, ts: 0, remaining: 0, time: 0 };
+    for (const x of list)
+      for (const k of ["a", "b", "st", "ts", "remaining"]) s[k] += x[k];
+    s.p = (100 * s.st) / s.ts;
+    s.label = "Etapa proporcional do primeiro turno";
+    return s;
+  }
+  function nationalSnapshot(index) {
+    const ss = ufCodes.map((uf) =>
+      index === undefined ? ufHistory[uf].at(-1) : ufHistory[uf][index],
+    );
+    const s = sumSnapshots(ss);
+    const keys = Object.keys(ss[0].turnout);
+    s.turnout = Object.fromEntries(
+      keys.map((k) => [
+        k,
+        ss.some((x) => x.turnout[k] === null)
+          ? null
+          : ss.reduce((n, x) => n + x.turnout[k], 0),
+      ]),
+    );
+    s.total = s.ts;
+    s.counted = s.st;
+    s.date = FIRST_TURN_DATA.national.date;
+    s.label = "Etapa simulada · " + per(s.p);
+    s.otherVotes = ss.reduce((n, x) => n + x.otherVotes, 0);
+    return s;
+  }
+  function emitNational() {
+    window.dispatchEvent(
+      new CustomEvent("horizonte-demo-snapshot", {
+        detail: nationalDemoHistory,
+      }),
+    );
+  }
+  function advanceDemo(ufs, step = 5) {
+    for (const uf of ufs) {
+      const h = ufHistory[uf],
+        next = Math.min(100, h.at(-1).p + step);
+      if (next !== h.at(-1).p)
+        h.push(FirstTurn.snapshot(FIRST_TURN_DATA.ufs[uf], next));
+    }
+    const s = nationalSnapshot();
+    if (s.st !== nationalDemoHistory.at(-1)?.st) nationalDemoHistory.push(s);
+    emitNational();
+    render();
+  }
+  function reset() {
+    cityHistory = {};
+    for (const [id, base] of Object.entries(FIRST_TURN_CITIES)) {
+      const snap = FirstTurn.snapshot(base, 100);
+      snap.label = base.date + " " + base.time;
+      cityHistory[id] = [snap];
+    }
+    allColorsDirty = true;
+    ufHistory = {};
+    for (const uf of ufCodes)
+      ufHistory[uf] = [
+        FirstTurn.snapshot(FIRST_TURN_DATA.ufs[uf], 5),
+        FirstTurn.snapshot(FIRST_TURN_DATA.ufs[uf], 10),
+      ];
+    nationalDemoHistory = [nationalSnapshot(0), nationalSnapshot(1)];
+    emitNational();
+    render();
+  }
+  function paint() {
+    if (!pathsById)
+      pathsById = new Map(
+        [...document.querySelectorAll("#cityPaths path")].map((path) => [
+          path.dataset.id,
+          path,
+        ]),
+      );
+    const paintCity = (id) => {
+      const path = pathsById.get(id);
+      if (!path) return;
+      const c = cityHistory[id]?.at(-1),
+        valid =
+          c && Number.isFinite(c.a) && Number.isFinite(c.b) && c.a + c.b > 0,
+        fill =
+          !valid || c.a === c.b ? "#d5d8db" : c.a > c.b ? "#c84d4d" : "#387cc1";
+      if (path.getAttribute("fill") !== fill) path.setAttribute("fill", fill);
+    };
+    if (allColorsDirty) {
+      for (const id of pathsById.keys()) paintCity(id);
+      allColorsDirty = false;
+      dirtyCities.clear();
+    } else if (dirtyCities.size) {
+      for (const id of dirtyCities) paintCity(id);
+      dirtyCities.clear();
+    }
+    if (paintedSelection !== selected) {
+      if (paintedSelection)
+        pathsById.get(paintedSelection)?.classList.remove("selectedCity");
+      if (selected) pathsById.get(selected)?.classList.add("selectedCity");
+      paintedSelection = selected;
+    }
+  }
+  function options() {
+    const uf = $("mapUF").value,
+      q = $("citySearch")
+        .value.normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase();
+    const cities = meta.cities.filter(
+      (c) => (!uf || c.uf === uf) && cityNames.get(c.id).includes(q),
+    );
+    $("citySelect").innerHTML =
+      '<option value="">Selecione (' +
+      cities.length +
+      " cidades)</option>" +
+      cities
+        .slice(0, 600)
+        .map(
+          (c) =>
+            `<option value="${c.id}">${escape(c.name)} / ${c.uf.toUpperCase()}</option>`,
+        )
+        .join("");
+    if (cities.length > 600)
+      $("citySelect").insertAdjacentHTML(
+        "beforeend",
+        "<option disabled>Refine a busca para ver as demais cidades</option>",
+      );
+  }
+  function detail() {
+    const c = byId.get(selected);
+    $("loadCity").hidden = demo || !c;
+    if (!c) return;
+    $("cityTitle").textContent = c.name + " / " + c.uf.toUpperCase();
+    const h = cityHistory[c.id],
+      s = h?.at(-1),
+      e = M.estimate(h, $("regionalMethod").value);
+    $("cityInfo").innerHTML = s
+      ? `<p>${demo ? "1º TURNO · RESULTADO OFICIAL DE " + escape(s.label) : escape(s.label) + " · Brasília"}</p><strong>${per(s.p)} apurado</strong><p><b class="redText">Lula: ${num(s.a)} (${s.a + s.b ? per((100 * s.a) / (s.a + s.b)) : "—"})</b><br><b class="blueText">Flávio: ${num(s.b)} (${s.a + s.b ? per((100 * s.b) / (s.a + s.b)) : "—"})</b></p><p>Projeção local: ${e ? per((100 * e.a) / (e.a + e.b)) + " Lula / " + per((100 * e.b) / (e.a + e.b)) + " Flávio" : "sem base suficiente para o método selecionado"}</p><small>${demo ? "Comparação entre Lula e Flávio; os demais candidatos não entram neste percentual." : s.received ? "Recebido " + new Date(s.received).toLocaleTimeString("pt-BR") : ""}</small>`
+      : "Sem leitura municipal. Consulte a cidade para obter votos e apuração.";
+  }
+  function estimates() {
+    return ufCodes.map((uf) => ({
+      uf,
+      est: M.estimate(ufHistory[uf], $("regionalMethod").value),
+    }));
+  }
+  function render() {
+    paint();
+    detail();
+    $("regionalNotice").textContent = demo
+      ? "DEMONSTRAÇÃO COM 1º TURNO · O mapa mostra o resultado municipal final entre Lula e Flávio. A simulação abaixo avança os estados separadamente, preservando as proporções reais de cada um. Não é o histórico da apuração nem uma previsão do segundo turno."
+      : "DADOS DO TSE · O mapa carrega automaticamente os snapshots municipais do segundo turno; a projeção por estado usa o histórico compartilhado." +
+        (cityCoverageNote ? " · " + cityCoverageNote : "");
+    const entries = estimates(),
+      ready = entries.filter((e) => e.est),
+      current = ufCodes.map((uf) => ufHistory[uf]?.at(-1)).filter(Boolean);
+    let pa = 0,
+      pb = 0;
+    for (const { est: e } of ready) {
+      pa += e.a;
+      pb += e.b;
+    }
+    const a = current.reduce((n, s) => n + s.a, 0),
+      b = current.reduce((n, s) => n + s.b, 0);
+    const fresh = demo || M.usableRegions(current, Date.now(), M.FRESH_MS);
+    const complete = ready.length === 28 && fresh;
+    $("regionalTotals").innerHTML =
+      `<div><span class="label">LULA AGORA ${current.length < 28 ? "· PARCIAL" : ""}</span><strong class="redText">${a + b ? per((a / (a + b)) * 100) : "—"}</strong><small>${num(a)} votos</small></div><div><span class="label">FLÁVIO AGORA ${current.length < 28 ? "· PARCIAL" : ""}</span><strong class="blueText">${a + b ? per((b / (a + b)) * 100) : "—"}</strong><small>${num(b)} votos</small></div><div><span class="label">PROJEÇÃO TERRITORIAL · LULA / FLÁVIO</span><strong>${complete ? per((pa / (pa + pb)) * 100) + " / " + per((pb / (pa + pb)) * 100) : "Aguardando base"}</strong><small>${ready.length}/28 unidades com dados para projetar${!fresh ? " · coleta ausente ou defasada" : ""}</small></div>`;
+    $("regionRows").innerHTML = Object.entries(M.groups)
+      .map(([group, ufs]) => {
+        const ss = ufs.map((u) => ufHistory[u]?.at(-1)).filter(Boolean),
+          ee = entries
+            .filter((e) => ufs.includes(e.uf) && e.est)
+            .map((e) => e.est),
+          c = sumSnapshots(ss),
+          valid = ss.length === ufs.length && ee.length === ufs.length;
+        const x = ee.reduce((v, e) => v + e.a, 0),
+          y = ee.reduce((v, e) => v + e.b, 0),
+          rateA =
+            ee.reduce((v, e) => v + e.rateA * e.current.ts, 0) /
+            (ee.reduce((v, e) => v + e.current.ts, 0) || 1),
+          rateB =
+            ee.reduce((v, e) => v + e.rateB * e.current.ts, 0) /
+            (ee.reduce((v, e) => v + e.current.ts, 0) || 1);
+        return `<tr><td>${group}${valid ? "" : " · parcial"}</td><td>${ss.length === ufs.length ? per(c.p) : "—"}</td><td>${num(c.a)}</td><td>${num(c.b)}</td><td>${valid ? num(rateA) + " · " + num(rateB) : "—"}</td><td>${valid ? per((x / (x + y)) * 100) + " · " + per((y / (x + y)) * 100) : "—"}</td><td>${valid ? num(Math.abs(x - c.a - (y - c.b))) + " para " + (x - c.a >= y - c.b ? "Lula" : "Flávio") : "—"}</td></tr>`;
+      })
+      .join("");
+    const upside = ready
+      .map(({ uf, est: e }) => ({ uf, saldo: e.ra - e.rb }))
+      .sort((x, y) => Math.abs(y.saldo) - Math.abs(x.saldo));
+    $("turnaround").textContent = complete
+      ? `${pa > pb !== a > b ? "Virada no cenário: " : "Mantido o cenário: "}${pa === pb ? "empate" : pa > pb ? "Lula termina à frente" : "Flávio termina à frente"}. Diferença atual: ${num(Math.abs(a - b))} votos; projetada: ${num(Math.abs(pa - pb))}. Maior diferença nos votos restantes por estado: ${upside[0].uf.toUpperCase()}, ${num(Math.abs(upside[0].saldo))} a favor de ${upside[0].saldo >= 0 ? "Lula" : "Flávio"}.`
+      : "Ainda não podemos calcular o total: consulte todos os estados e o exterior. Para medir o ritmo, precisamos de duas leituras com avanço na apuração.";
+    $("advanceRegion").disabled =
+      demo &&
+      M.groups[$("demoRegion").value].every(
+        (uf) => ufHistory[uf].at(-1).p >= 100,
+      );
+    const sigma = Number($("uncertainty").value);
+    $("sigmaLabel").textContent = sigma + " pontos percentuais";
+    const sim = complete ? M.simulate(entries, sigma) : null;
+    $("chances").innerHTML = sim
+      ? `<div class="chance redText"><b>${per(sim.a)}</b><span>Lula à frente nos cenários</span></div><div class="chance blueText"><b>${per(sim.b)}</b><span>Flávio à frente nos cenários</span></div><div class="chance"><b>${per(sim.tie)}</b><span>Empate nos cenários</span></div>`
+      : "Sem cobertura suficiente para simular o resultado nacional.";
+    $("chanceRange").textContent = sim
+      ? `Faixa com 90% dos cenários para Lula: ${per(sim.low)} a ${per(sim.high)} dos votos. ${demo ? "Base: primeiro turno real, com avanço proporcional simulado. " : ""}Frequências dependem do modelo e do controle de incerteza; mesmo 100% não significa certeza real.`
+      : "";
+    window.dispatchEvent(
+      new CustomEvent("horizonte-territory-estimates", {
+        detail: { entries, complete, demo, sigma },
+      }),
+    );
+  }
+  window.addEventListener("horizonte-territory-request", () => render());
+  function setBusy(v) {
+    loading = v;
+    for (const id of ["loadUF", "loadCities", "loadCity"]) $(id).disabled = v;
+  }
+  async function get(uf, code) {
+    const file = uf + (code || "") + "-c0001-e006258-u.json",
+      r = await fetch(
+        `https://resultados.tse.jus.br/oficial/ele2026/6258/dados/${uf}/${file}`,
+        { cache: "no-cache", signal: AbortSignal.timeout(15000) },
+      );
+    if (!r.ok) throw Error(`HTTP ${r.status} em ${uf}${code || ""}`);
+    const s = M.parse(await r.json(), uf, code);
+    s.received = Date.now();
+    return s;
+  }
+  async function collect(tasks, type) {
+    if (loading || demo) return;
+    setBusy(true);
+    const ticket = ++job;
+    let done = 0,
+      corrections = 0;
+    try {
+      for (const t of tasks) {
+        if (ticket !== job || demo) break;
+        let s;
+        try {
+          s = await get(t.uf, t.code);
+        } catch (e) {
+          if (type === "city" && /HTTP 404/.test(e.message)) {
+            done++;
+            message(
+              `${done}/${tasks.length} localidades carregadas; algumas ainda não têm snapshot central.`,
+            );
+            continue;
+          }
+          throw e;
+        }
+        if (ticket !== job || demo) break;
+        const target = type === "uf" ? liveUF : liveCity;
+        if (type === "city") {
+          const shared = await TSEClient.cityHistory(t.uf, t.code);
+          if (shared.length) target[t.id] = shared;
+        }
+        const result = M.append(target[t.id] || [], s);
+        if (result.old)
+          throw Error("Arquivo antigo recebido: coleta interrompida");
+        if (result.reset) corrections++;
+        target[t.id] = result.h;
+        if (type === "city") dirtyCities.add(t.id);
+        done++;
+        message(
+          `${done}/${tasks.length} leituras recebidas${corrections ? " · " + corrections + " janelas reiniciadas por correção" : ""}. Os municípios são fornecidos pelo lote central agendado do projeto.`,
+        );
+        if (done % 10 === 0 || type === "uf") render();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      if (ticket === job)
+        message(
+          `Coleta concluída: ${done}/${tasks.length}. ${corrections} janelas reiniciadas. ${type === "uf" ? "Consulte novamente após avanço para medir o ritmo." : ""}`,
+        );
+    } catch (e) {
+      if (ticket === job)
+        message(
+          `Coleta interrompida após ${done}/${tasks.length}: ${e.message}. Dados anteriores preservados com data. O snapshot central do projeto pode estar ausente ou desatualizado.`,
+        );
+    } finally {
+      setBusy(false);
+      render();
+    }
+  }
+  function select(id) {
+    selected = id;
+    detail();
+    paint();
+    $("citySelect").value = id;
+  }
+  function zoom() {
+    const uf = $("mapUF").value;
+    view = [0, 0, 700, 690];
+    if (uf) {
+      const bounds = meta.cities
+        .filter((c) => c.uf === uf && c.path)
+        .map((c) =>
+          document
+            .querySelector(`#cityPaths path[data-id="${c.id}"]`)
+            .getBBox(),
+        );
+      const x = Math.min(...bounds.map((b) => b.x)),
+        y = Math.min(...bounds.map((b) => b.y)),
+        r = Math.max(...bounds.map((b) => b.x + b.width)),
+        b = Math.max(...bounds.map((b) => b.y + b.height));
+      view = [x - 8, y - 8, r - x + 16, b - y + 16];
+    }
+    $("brazilMap").setAttribute("viewBox", view.join(" "));
+  }
+  let territoryLoading = false,
+    sharedTerritoryVersion = null;
+  async function loadSharedTerritory(force = true) {
+    if (demo || territoryLoading) return;
+    territoryLoading = true;
+    try {
+      const [manifest, localitiesManifest] = await Promise.all([
+        TSEClient.manifest(force),
+        TSEClient.localitiesManifest(force),
+      ]);
+      const version = `${manifest?.checkedAt || "unversioned"}|${localitiesManifest?.checkedAt || "no-localities"}`;
+      if (version === sharedTerritoryVersion) return;
+      const shared = await TSEClient.history(),
+        ufs = [...new Set(meta.cities.filter((c) => c.code).map((c) => c.uf))];
+      const packs = await Promise.all(
+        ufs.map(async (uf) => {
+          const [results, histories] = await Promise.all([
+            TSEClient.cityResults(uf, 6258).catch(() => ({})),
+            TSEClient.cityHistories(uf).catch(() => ({})),
+          ]);
+          return { uf, results, histories };
+        }),
+      );
+      if (demo) return;
+      const dataByUf = new Map(packs.map((p) => [p.uf, p]));
+      const nextCity = { ...liveCity };
+      const received =
+        Date.parse(
+          localitiesManifest?.checkedAt ||
+            manifest?.checkedAt ||
+            shared.updatedAt ||
+            "",
+        ) || Date.now();
+      let loaded = 0,
+        withVotes = 0,
+        invalid = 0;
+      for (const city of meta.cities) {
+        if (!city.code) continue;
+        const pack = dataByUf.get(city.uf),
+          raw = pack?.results?.[city.code];
+        let history = Array.isArray(pack?.histories?.[city.code])
+          ? [...pack.histories[city.code]]
+          : [...(liveCity[city.id] || [])];
+        if (raw) {
+          try {
+            const snapshot = M.parse(raw, city.uf, city.code);
+            snapshot.received = received;
+            const result = M.append(history, snapshot);
+            if (!result.old) history = result.h;
+          } catch {
+            invalid++;
+          }
+        }
+        if (history.length) {
+          nextCity[city.id] = history;
+          loaded++;
+          if ((history.at(-1)?.st || 0) > 0) withVotes++;
+        }
+      }
+      liveUF = shared.ufs || {};
+      ufHistory = liveUF;
+      liveCity = nextCity;
+      cityHistory = nextCity;
+      allColorsDirty = true;
+      sharedTerritoryVersion = version;
+      cityCoverageNote = `${withVotes}/${meta.cities.filter((c) => c.code).length} municípios com votos apurados; ${loaded - withVotes} ainda zerados · lote ${new Date(received).toLocaleString("pt-BR")}`;
+      render();
+      message(
+        `Snapshots municipais: ${loaded}/${meta.cities.filter((c) => c.code).length} carregados, ${withVotes} com votos apurados${invalid ? ` · ${invalid} arquivos inválidos ignorados` : ""}.`,
+      );
+    } catch (e) {
+      message(
+        "Não foi possível carregar os snapshots territoriais compartilhados: " +
+          e.message,
+      );
+    } finally {
+      territoryLoading = false;
+    }
+  }
+  function switchMode(next) {
+    job++;
+    demo = next === "demo";
+    document
+      .querySelectorAll(".liveRegional")
+      .forEach((e) => (e.hidden = demo));
+    $("demoRegionControls").hidden = !demo;
+    if (demo) reset();
+    else {
+      ufHistory = liveUF;
+      cityHistory = liveCity;
+      allColorsDirty = true;
+      render();
+      message("Carregando os dados oficiais do segundo turno para o mapa…");
+      loadSharedTerritory(true);
+    }
+  }
+  window.addEventListener("horizonte-mode", (e) => switchMode(e.detail));
+  $("mapUF").onchange = () => {
+    options();
+    zoom();
+  };
+  $("citySearch").oninput = options;
+  $("citySelect").onchange = () => select($("citySelect").value);
+  $("cityPaths").onclick = (e) => {
+    const id = e.target.dataset.id;
+    if (id) select(id);
+  };
+  $("mapReset").onclick = () => {
+    $("mapUF").value = "";
+    zoom();
+    options();
+  };
+  $("regionalMethod").onchange = render;
+  $("uncertainty").oninput = () => {
+    $("sigmaLabel").textContent =
+      $("uncertainty").value + " pontos percentuais";
+    clearTimeout(simulationTimer);
+    simulationTimer = setTimeout(render, 120);
+  };
+  $("loadUF").onclick = () =>
+    collect(
+      ufCodes.map((uf) => ({ id: uf, uf })),
+      "uf",
+    );
+  $("loadCity").onclick = () => {
+    const c = byId.get(selected);
+    if (c) collect([c], "city");
+  };
+  $("loadCities").onclick = () =>
+    collect(
+      meta.cities.filter(
+        (c) => c.code && (!$("mapUF").value || c.uf === $("mapUF").value),
+      ),
+      "city",
+    );
+  $("stopRegions").onclick = () => {
+    job++;
+    message("Parada solicitada. A requisição em andamento será descartada.");
+  };
+  $("resetRegions").onclick = reset;
+  $("demoRegion").onchange = render;
+  $("regionalShare").oninput = () =>
+    ($("regionalShareLabel").textContent = $("regionalShare").value + "%");
+  $("advanceRegion").onclick = () =>
+    advanceDemo(M.groups[$("demoRegion").value], 5);
+  window.addEventListener("horizonte-demo-advance", (e) => {
+    if (demo) advanceDemo(ufCodes, e.detail);
+  });
+  window.addEventListener("horizonte-demo-reset", () => {
+    if (demo) reset();
+  });
+  $("exportRegions").onclick = () => {
+    const a = document.createElement("a"),
+      url = URL.createObjectURL(
+        new Blob(
+          [
+            JSON.stringify(
+              {
+                mode: demo ? "demonstracao-primeiro-turno" : "oficial",
+                method: $("regionalMethod").value,
+                sigma: Number($("uncertainty").value),
+                ufHistory,
+                cityHistory,
+              },
+              null,
+              2,
+            ),
+          ],
+          { type: "application/json" },
+        ),
+      );
+    a.href = url;
+    a.download = "painel-eleitoral-2026-territorios.json";
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+  options();
+  reset();
+  setInterval(() => {
+    if (!demo && !loading) loadSharedTerritory(true);
+  }, 300000);
 })();
-
-
-
-
-
