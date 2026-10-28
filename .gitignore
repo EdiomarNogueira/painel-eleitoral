@@ -1,2 +1,19 @@
 # O manifesto e os snapshots fazem parte dos dados compartilhados.
 node_modules/
+
+# Configurações locais, credenciais e artefatos de exportação não são publicáveis.
+.env
+.env.*
+!.env.example
+.openai/
+.codex/
+.agents/
+.aws/
+.ssh/
+.npmrc
+*.pem
+*.key
+*.p12
+*.pfx
+*.log
+exportacao/

@@ -15,6 +15,8 @@ function runNode(commandArguments) {
   if (result.status !== 0) process.exit(result.status || 1);
 }
 
+runNode(["scripts/validate-data.cjs"]);
+
 const browserScripts = readdirSync(path.join(projectRoot, "dist")).filter(
   (filename) => filename.endsWith(".js"),
 );

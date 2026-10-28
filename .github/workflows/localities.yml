@@ -36,6 +36,9 @@ jobs:
         with:
           node-version: 24
 
+      - name: Validate published JSON files
+        run: node scripts/validate-data.cjs
+
       - name: Collect municipality and exterior snapshots
         id: collect
         run: node collect-tse.cjs --localities-only

@@ -39,6 +39,9 @@ jobs:
         with:
           node-version: 24
 
+      - name: Validate published JSON files
+        run: node scripts/validate-data.cjs
+
       - name: Collect priority national and state snapshots
         id: collect-core
         run: node collect-tse.cjs --core-only

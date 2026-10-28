@@ -3,9 +3,11 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const root = path.join(__dirname, "dist");
-const sharedRoot = new URL(
-  "https://ediomarnogueira.github.io/painel-eleitoral/",
-);
+// Opcional: endereço da publicação que será usada como alternativa aos dados locais.
+// Nenhum usuário ou repositório pessoal fica gravado no código.
+const sharedRoot = process.env.PAINEL_SHARED_URL
+  ? new URL(process.env.PAINEL_SHARED_URL)
+  : null;
 
 function contentType(filename) {
   if (filename.endsWith(".js")) return "text/javascript; charset=utf-8";
@@ -77,6 +79,10 @@ http
         snapshotPath.startsWith(root + path.sep) &&
         fs.existsSync(snapshotPath)
       ) {
+        localFile(pathname, res);
+        return;
+      }
+      if (!sharedRoot) {
         localFile(pathname, res);
         return;
       }

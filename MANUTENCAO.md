@@ -28,7 +28,9 @@ node serve.cjs                       # prévia local na porta 4173
 
 O primeiro turno consolidado local é preservado. `--force` existe para revisar eventuais retificações oficiais; resultados com 100% não são consultados novamente de forma automática. Reinicie/recarregue a página após uma revisão forçada para limpar o cache final da sessão.
 
-Na prévia local, os arquivos existentes na pasta têm prioridade sobre a publicação remota. `PAINEL_REMOTE=1` permite testar a versão de dados publicada. Alterações locais não publicam o site: os workflows só recebem o código após envio ao repositório.
+Na prévia local, os arquivos existentes na pasta têm prioridade. O endereço remoto é opcional e configurado pela variável `PAINEL_SHARED_URL` (URL da publicação, terminada em `/`). Com essa variável definida, `PAINEL_REMOTE=1` permite priorizar os dados publicados. Sem endereço remoto, o servidor usa somente os arquivos locais. Alterações locais não publicam o site: os workflows só recebem o código após envio ao repositório.
+
+Para recriar o repositório sem levar a identidade dos commits anteriores, siga [as instruções de publicação limpa](docs/PUBLICACAO_LIMPA.md).
 
 ## Publicação no GitHub Pages
 
