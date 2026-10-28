@@ -1,0 +1,7 @@
+# Dados gerados ou oficiais: não formatar nem editar manualmente.
+dist/data/
+dist/*-data.js
+dist/*-cities.js
+dist/exterior-locations.js
+dist/municipios.geojson
+dist/photos/

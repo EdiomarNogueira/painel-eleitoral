@@ -1,14 +1,88 @@
-(()=>{
-const $=id=>document.getElementById(id),num=n=>n.toLocaleString('pt-BR'),percent=n=>n.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})+'%',escape=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const guide=document.createElement('nav');guide.className='sectionNav';guide.setAttribute('aria-label','Ir para uma parte da página');guide.innerHTML='<a href="#participation">1. Participação</a><a href="#nationalProjection">2. Projeção nacional</a><a href="#territory">3. Mapa e regiões</a><a href="#nationalHistory">4. Histórico</a>';
-document.querySelector('.intro').after(guide);document.querySelector('.workspace').id='nationalProjection';document.querySelector('.history').id='nationalHistory';
-const base=document.createElement('details');base.id='firstTurnReference';base.className='panel reference';const d=FIRST_TURN_DATA.national,total=Number(d.v.vv);base.innerHTML=`<summary>Ver o resultado completo do 1º turno usado como base <span>+</span></summary><p>Resultado final oficial de 2026, com todos os candidatos. Os percentuais desta tabela usam <b>todos os votos válidos</b>. As projeções do painel comparam apenas Lula e Flávio, sem atribuir a eles os votos dos outros candidatos.</p><p>Arquivo do TSE gerado em ${escape(d.date)} às ${escape(d.time)} (Brasília). Etapas da demonstração: distribuição proporcional deste resultado, não reprodução da sequência histórica.</p><div class="tablewrap"><table><caption>Resultado oficial do primeiro turno · presidente · Brasil</caption><thead><tr><th scope="col">Candidato</th><th scope="col">Votos</th><th scope="col">% dos votos válidos</th></tr></thead><tbody>${[...d.candidates].sort((a,b)=>b.votes-a.votes).map(c=>`<tr><th scope="row">${escape(c.name)}</th><td>${num(c.votes)}</td><td>${percent(c.votes/total*100)}</td></tr>`).join('')}</tbody></table></div><p><a href="${FIRST_TURN_DATA.source}/br/br-c0001-e006257-u.json" target="_blank" rel="noopener">Conferir arquivo oficial do primeiro turno ↗</a></p>`;
-$('notice').after(base);
-const hint=document.createElement('p');hint.className='plainHint';hint.innerHTML='<b>Como ler:</b> votos atuais são o que já entrou na contagem. Projeção é o total estimado se o ritmo continuar. “—” significa que ainda não há base para calcular.';document.querySelector('.results .controls').after(hint);
-const regionalHint=document.createElement('p');regionalHint.className='plainHint';regionalHint.textContent='O mapa mostra cidades. O cálculo abaixo soma os estados e o exterior. Ao avançar uma região na demonstração, a contagem nacional também muda. A projeção nacional simples e a projeção por estados usam os mesmos votos, mas métodos diferentes.';document.querySelector('.regionalControls').prepend(regionalHint);
-const tableHint=document.createElement('p');tableHint.className='tableHint';tableHint.textContent='No celular, deslize a tabela para os lados. Seção é a unidade eleitoral cujo resultado foi recebido.';$('regionRows').closest('.tablewrap').before(tableHint);
-document.querySelectorAll('thead th').forEach(th=>th.scope='col');
-document.querySelector('.methodology').innerHTML='<summary>Como funciona a projeção nacional <span>+</span></summary><div><p><b>Proporção já contada:</b> divide os votos atuais pela fração da apuração. Por exemplo, com 10% contado, multiplicar por dez estima o total em 100%. Os percentuais entre os candidatos permanecem iguais.</p><p><b>Ritmo dos últimos lotes:</b> mede os votos que entraram a cada ponto de avanço e aplica esse ritmo ao restante. São usadas até cinco leituras diferentes. Sem avanço entre leituras, o painel aguarda dados.</p><p><b>Demonstração com primeiro turno:</b> usa contagens oficiais de 2026 para criar etapas proporcionais. Essas etapas não são registros históricos. Lula e Flávio são comparados entre si; outros candidatos não entram no denominador da comparação, mas continuam no resumo de votos válidos e no resultado completo da base. Não há estimativa de transferência de votos para o segundo turno.</p><p><b>Limites:</b> as regiões chegam em ordens diferentes, e seções têm tamanhos diferentes. O cálculo por estados tenta considerar essas diferenças territoriais, mas nenhum dos cálculos foi validado como probabilidade de eleição. A apuração oficial determina o resultado.</p><a href="https://www.tse.jus.br/eleicoes/informacoes-tecnicas-sobre-a-divulgacao-de-resultados" target="_blank" rel="noopener">Documentação técnica do TSE ↗</a></div>';
-window.addEventListener('horizonte-mode',e=>{base.hidden=e.detail!=='demo';document.querySelector('header .pill').textContent=e.detail==='demo'?'Base: 1º turno':'Oficial: 2º turno';});
-document.querySelector('header .pill').textContent='Base: 1º turno';const credit=document.createElement('p');credit.className='photoCredit';credit.innerHTML='Fotos: Tribunal Superior Eleitoral · <a href="photos/sources.json" target="_blank" rel="noopener">fontes oficiais</a>';document.querySelector('#cards').after(credit);document.addEventListener('error',e=>{if(e.target.matches?.('img.candidatePhoto')){const fallback=document.createElement('span');fallback.className='avatar';fallback.textContent=e.target.src.includes('/13.')?'13':'22';e.target.replaceWith(fallback);}},true);
+/** Comportamentos de navegação e apresentação da visão completa. */
+(() => {
+  const elementById = (id) => document.getElementById(id);
+  const num = (n) => n.toLocaleString("pt-BR");
+  const percent = (n) =>
+    n.toLocaleString("pt-BR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }) + "%";
+  const escape = (s) =>
+    String(s).replace(
+      /[&<>"']/g,
+      (c) =>
+        ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;",
+        })[c],
+    );
+  const guide = document.createElement("nav");
+  guide.className = "sectionNav";
+  guide.setAttribute("aria-label", "Ir para uma parte da página");
+  guide.innerHTML =
+    '<a href="#participation">1. Participação</a><a href="#nationalProjection">2. Projeção nacional</a><a href="#territory">3. Mapa e regiões</a><a href="#nationalHistory">4. Histórico</a>';
+  document.querySelector(".intro").after(guide);
+  document.querySelector(".workspace").id = "nationalProjection";
+  document.querySelector(".history").id = "nationalHistory";
+  const base = document.createElement("details");
+  base.id = "firstTurnReference";
+  base.className = "panel reference";
+  const d = FIRST_TURN_DATA.national;
+  const total = Number(d.v.vv);
+  base.innerHTML = `<summary>Ver o resultado completo do 1º turno usado como base <span>+</span></summary><p>Resultado final oficial de 2026, com todos os candidatos. Os percentuais desta tabela usam <b>todos os votos válidos</b>. As projeções do painel comparam apenas Lula e Flávio, sem atribuir a eles os votos dos outros candidatos.</p><p>Arquivo do TSE gerado em ${escape(d.date)} às ${escape(d.time)} (Brasília). Etapas da demonstração: distribuição proporcional deste resultado, não reprodução da sequência histórica.</p><div class="tablewrap"><table><caption>Resultado oficial do primeiro turno · presidente · Brasil</caption><thead><tr><th scope="col">Candidato</th><th scope="col">Votos</th><th scope="col">% dos votos válidos</th></tr></thead><tbody>${[
+    ...d.candidates,
+  ]
+    .sort((a, b) => b.votes - a.votes)
+    .map(
+      (c) =>
+        `<tr><th scope="row">${escape(c.name)}</th><td>${num(c.votes)}</td><td>${percent((c.votes / total) * 100)}</td></tr>`,
+    )
+    .join(
+      "",
+    )}</tbody></table></div><p><a href="${FIRST_TURN_DATA.source}/br/br-c0001-e006257-u.json" target="_blank" rel="noopener">Conferir arquivo oficial do primeiro turno ↗</a></p>`;
+  elementById("notice").after(base);
+  const hint = document.createElement("p");
+  hint.className = "plainHint";
+  hint.innerHTML =
+    "<b>Como ler:</b> votos atuais são o que já entrou na contagem. Projeção é o total estimado se o ritmo continuar. “—” significa que ainda não há base para calcular.";
+  document.querySelector(".results .controls").after(hint);
+  const regionalHint = document.createElement("p");
+  regionalHint.className = "plainHint";
+  regionalHint.textContent =
+    "O mapa mostra cidades. O cálculo abaixo soma os estados e o exterior. Ao avançar uma região na demonstração, a contagem nacional também muda. A projeção nacional simples e a projeção por estados usam os mesmos votos, mas métodos diferentes.";
+  document.querySelector(".regionalControls").prepend(regionalHint);
+  const tableHint = document.createElement("p");
+  tableHint.className = "tableHint";
+  tableHint.textContent =
+    "No celular, deslize a tabela para os lados. Seção é a unidade eleitoral cujo resultado foi recebido.";
+  elementById("regionRows").closest(".tablewrap").before(tableHint);
+  document.querySelectorAll("thead th").forEach((th) => (th.scope = "col"));
+  document.querySelector(".methodology").innerHTML =
+    '<summary>Como funciona a projeção nacional <span>+</span></summary><div><p><b>Proporção já contada:</b> divide os votos atuais pela fração da apuração. Por exemplo, com 10% contado, multiplicar por dez estima o total em 100%. Os percentuais entre os candidatos permanecem iguais.</p><p><b>Ritmo dos últimos lotes:</b> mede os votos que entraram a cada ponto de avanço e aplica esse ritmo ao restante. São usadas até cinco leituras diferentes. Sem avanço entre leituras, o painel aguarda dados.</p><p><b>Demonstração com primeiro turno:</b> usa contagens oficiais de 2026 para criar etapas proporcionais. Essas etapas não são registros históricos. Lula e Flávio são comparados entre si; outros candidatos não entram no denominador da comparação, mas continuam no resumo de votos válidos e no resultado completo da base. Não há estimativa de transferência de votos para o segundo turno.</p><p><b>Limites:</b> as regiões chegam em ordens diferentes, e seções têm tamanhos diferentes. O cálculo por estados tenta considerar essas diferenças territoriais, mas nenhum dos cálculos foi validado como probabilidade de eleição. A apuração oficial determina o resultado.</p><a href="https://www.tse.jus.br/eleicoes/informacoes-tecnicas-sobre-a-divulgacao-de-resultados" target="_blank" rel="noopener">Documentação técnica do TSE ↗</a></div>';
+  window.addEventListener("horizonte-mode", (e) => {
+    base.hidden = e.detail !== "demo";
+    document.querySelector("header .pill").textContent =
+      e.detail === "demo" ? "Base: 1º turno" : "Oficial: 2º turno";
+  });
+  document.querySelector("header .pill").textContent = "Base: 1º turno";
+  const credit = document.createElement("p");
+  credit.className = "photoCredit";
+  credit.innerHTML =
+    'Fotos: Tribunal Superior Eleitoral · <a href="photos/sources.json" target="_blank" rel="noopener">fontes oficiais</a>';
+  document.querySelector("#cards").after(credit);
+  document.addEventListener(
+    "error",
+    (e) => {
+      if (e.target.matches?.("img.candidatePhoto")) {
+        const fallback = document.createElement("span");
+        fallback.className = "avatar";
+        fallback.textContent = e.target.src.includes("/13.") ? "13" : "22";
+        e.target.replaceWith(fallback);
+      }
+    },
+    true,
+  );
 })();

@@ -1,1 +1,28 @@
-header{flex-wrap:wrap}.brand{font-size:22px;letter-spacing:-.6px}.brand span{white-space:normal}@media(max-width:620px){header{gap:12px}.brand{font-size:20px}.brand>span{font-size:inherit}.brand[href="simples.html"] span{font-size:11px;display:block;border-left:0;margin:5px 0 0;padding:0}}
+header {
+  flex-wrap: wrap;
+}
+.brand {
+  font-size: 22px;
+  letter-spacing: -0.6px;
+}
+.brand span {
+  white-space: normal;
+}
+@media (max-width: 620px) {
+  header {
+    gap: 12px;
+  }
+  .brand {
+    font-size: 20px;
+  }
+  .brand > span {
+    font-size: inherit;
+  }
+  .brand[href="simples.html"] span {
+    font-size: 11px;
+    display: block;
+    border-left: 0;
+    margin: 5px 0 0;
+    padding: 0;
+  }
+}

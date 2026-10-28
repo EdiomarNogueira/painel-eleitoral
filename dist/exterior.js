@@ -1,11 +1,14 @@
+/** Interface do exterior: carrega localidades, agrupa países e apresenta a cobertura. */
 /* Painel independente: localidade eleitoral (TSE) -> país (curadoria), sem alterar a apuração nacional. */
 (() => {
   "use strict";
+
   const M = window.ExteriorModel;
   const locations = window.EXTERIOR_LOCATIONS;
-  if (!M || !Array.isArray(locations))
+  if (!M || !Array.isArray(locations)) {
     throw Error("Dependências do painel exterior não carregadas");
-  const $ = (id) => document.getElementById(id);
+  }
+  const elementById = (id) => document.getElementById(id);
   const fmt = (n) => n.toLocaleString("pt-BR");
   const percent = (n) =>
     n.toLocaleString("pt-BR", {
@@ -30,13 +33,19 @@
       .replace(/[\u0300-\u036f]/g, "")
       .toLowerCase();
   const source = "https://resultados.tse.jus.br/oficial/ele2026";
-  let mode = "demo",
-    inFlight = false,
-    job = 0,
-    sharedVersion = null;
+  let mode = "demo";
+  let inFlight = false;
+  let job = 0;
+  let sharedVersion = null;
   let lastStatus = "";
-  const snapshots = { demo: {}, official: {} };
-  const latest = { demo: null, official: null };
+  const snapshots = {
+    demo: {},
+    official: {},
+  };
+  const latest = {
+    demo: null,
+    official: null,
+  };
   const cached = window.EXTERIOR_FIRST_TURN;
   if (
     cached &&
@@ -52,7 +61,6 @@
       console.warn("Cache exterior ignorado:", e.message);
     }
   }
-
   const host = document.createElement("section");
   host.id = "exterior";
   host.className = "panel exteriorPanel";
@@ -72,71 +80,81 @@
       <label for="extSort">Ordenar por <select id="extSort"><option value="valid">Mais votos válidos</option><option value="alpha">Nome do país</option><option value="a">Maior percentual de Lula</option><option value="b">Maior percentual de Flávio</option></select></label></div>
     <div id="extCountries" class="extCountries"></div>
     <p class="extFootnote">Fonte: TSE, resultado unificado EA20. Cada localidade eleitoral do exterior pertence a exatamente um país nesta tabela de correspondência do Painel Eleitoral 2026, que não é uma classificação por país fornecida pelo TSE. A demonstração mostra o <b>resultado final real do primeiro turno</b>, não as etapas proporcionais da simulação. Os percentuais de Lula e Flávio comparam somente os dois; os demais candidatos entram no total de votos válidos do primeiro turno. No segundo turno, cada país mostra apenas os snapshots já publicados pelo projeto; resultados parciais e leituras feitas em momentos diferentes não devem ser interpretados como totalização final.</p>`;
-  const territory = $("territory");
-  if (territory) territory.after(host);
-  else document.querySelector(".history").before(host);
-
-  function expectedDemo() {
+  const territory = elementById("territory");
+  if (territory) {
+    territory.after(host);
+  } else {
+    document.querySelector(".history").before(host);
+  }
+  function getDemoNationalTotals() {
     const d = window.FIRST_TURN_DATA?.ufs?.zz;
-    if (!d) return null;
+    if (!d) {
+      return null;
+    }
     const a = Number(d.candidates.find((c) => c.id === "13")?.votes || 0);
     const b = Number(d.candidates.find((c) => c.id === "22")?.votes || 0);
     const valid = Number(d.v.vv);
-    return { a, b, valid, other: valid - a - b };
+    return {
+      a,
+      b,
+      valid,
+      other: valid - a - b,
+    };
   }
-  function expectedOfficial() {
+  function getOfficialNationalTotals() {
     const d = latest.official;
     return d && d.reference ? d.reference : null;
   }
-  function note(s) {
+  function showStatus(s) {
     lastStatus = s;
-    $("extStatus").textContent = s;
+    elementById("extStatus").textContent = s;
   }
   function render() {
     const bundle = M.group(locations, snapshots[mode]);
     const { rows, total, localities } = bundle;
     const allLoaded = total.loaded === localities;
     const isDemo = mode === "demo";
-    $("extStatus").textContent = lastStatus;
+    elementById("extStatus").textContent = lastStatus;
     const electionLabel = isDemo
       ? "1º turno · resultado final oficial"
       : "2º turno · leituras oficiais";
-    $("extDescription").textContent = isDemo
+    elementById("extDescription").textContent = isDemo
       ? "Primeiro turno: votos reais por localidade, sem simular uma apuração por país. Os arquivos estão incluídos na distribuição do projeto."
       : "Segundo turno: snapshots compartilhados das 186 localidades salvas pelo projeto. Horários diferentes podem produzir diferenças em relação ao agregado ZZ.";
-    $("extLoad").textContent = isDemo
+    elementById("extLoad").textContent = isDemo
       ? "Carregar/atualizar 1º turno ↻"
       : "Carregar leituras do projeto ↻";
-    $("extLoad").disabled = inFlight;
-    $("extStop").disabled = !inFlight;
-    $("extMetrics").innerHTML = `
+    elementById("extLoad").disabled = inFlight;
+    elementById("extStop").disabled = !inFlight;
+    elementById("extMetrics").innerHTML = `
       <div><span class="label">LOCALIDADES CONSULTADAS</span><strong>${total.loaded} / ${localities}</strong><small>${rows.filter((r) => r.loaded === r.places.length).length} / ${rows.length} países com cobertura completa</small></div>
       <div><span class="label">VOTOS VÁLIDOS ${!allLoaded ? "· PARCIAL" : ""}</span><strong>${fmt(total.valid)}</strong><small>${electionLabel}</small></div>
       <div><span class="label">LULA / FLÁVIO · ENTRE OS DOIS</span><strong>${total.a + total.b ? percent((100 * total.a) / (total.a + total.b)) + " / " + percent((100 * total.b) / (total.a + total.b)) : "—"}</strong><small>${fmt(total.a)} / ${fmt(total.b)} votos</small></div>`;
-    const reference = isDemo ? expectedDemo() : expectedOfficial();
+    const reference = isDemo
+      ? getDemoNationalTotals()
+      : getOfficialNationalTotals();
     const result = allLoaded ? M.compare(total, reference) : null;
     if (!allLoaded) {
-      $("extReconciliation").textContent =
+      elementById("extReconciliation").textContent =
         `Cobertura incompleta: ${localities - total.loaded} localidades ainda sem leitura. Totais exibidos apenas para as localidades consultadas.`;
     } else if (isDemo && result) {
-      $("extReconciliation").textContent = result.matches
+      elementById("extReconciliation").textContent = result.matches
         ? "✓ Conferência concluída: a soma das localidades corresponde aos votos válidos e aos votos dos candidatos publicados pelo TSE para o exterior (ZZ)."
         : "⚠ Atenção: a soma das localidades não coincide com o agregado oficial ZZ. Não considere este recorte reconciliado.";
     } else if (!isDemo && result) {
-      $("extReconciliation").textContent = result.matches
+      elementById("extReconciliation").textContent = result.matches
         ? "✓ A soma das últimas leituras coincide com o agregado ZZ consultado."
         : "⚠ As leituras por localidade diferem do agregado ZZ consultado. Os arquivos podem pertencer a momentos distintos da apuração.";
     } else {
-      $("extReconciliation").textContent =
+      elementById("extReconciliation").textContent =
         "186 localidades consultadas. Não há uma referência ZZ do mesmo turno disponível para conferir os totais.";
     }
-    $("extReconciliation").classList.toggle(
+    elementById("extReconciliation").classList.toggle(
       "extWarning",
       Boolean(result && !result.matches),
     );
-
-    const query = clean($("extSearch").value.trim());
-    const sort = $("extSort").value;
+    const query = clean(elementById("extSearch").value.trim());
+    const sort = elementById("extSort").value;
     const filtered = rows
       .filter(
         (r) =>
@@ -157,7 +175,7 @@
         (e) => e.dataset.country,
       ),
     );
-    $("extCountries").innerHTML = filtered.length
+    elementById("extCountries").innerHTML = filtered.length
       ? filtered
           .map((r, i) => {
             const hasVotes = r.a + r.b > 0;
@@ -180,28 +198,32 @@
           .join("")
       : "<p>Nenhum país ou localidade encontrado.</p>";
   }
-
   function endpoint(turn, code) {
     return `${source}/${turn === "demo" ? "6257" : "6258"}/dados/zz/zz${code}-c0001-e00${turn === "demo" ? "6257" : "6258"}-u.json`;
   }
-  async function readLoc(turn, loc, signal) {
+  async function readLocalityResult(turn, loc, signal) {
     const response = await fetch(endpoint(turn, loc.code), {
       cache: "no-cache",
       signal,
     });
-    if (!response.ok)
+    if (!response.ok) {
       throw Error(`HTTP ${response.status} em ${loc.name} (${loc.code})`);
+    }
     return M.readResult(
       await response.json(),
       turn === "demo" ? "6257" : "6258",
       loc.code,
     );
   }
-  async function getOfficialZZ(signal) {
+  async function readExteriorAggregate(signal) {
     const url = `${source}/6258/dados/zz/zz-c0001-e006258-u.json`;
-    const response = await fetch(url, { cache: "no-cache", signal });
-    if (!response.ok)
+    const response = await fetch(url, {
+      cache: "no-cache",
+      signal,
+    });
+    if (!response.ok) {
       throw Error("Resposta " + response.status + " ao consultar ZZ");
+    }
     const d = await response.json();
     if (
       d.ele !== "6258" ||
@@ -209,24 +231,33 @@
       d.tpabr !== "uf" ||
       d.cdabr !== "zz" ||
       d.f !== "o"
-    )
+    ) {
       throw Error("Agregado ZZ não corresponde ao segundo turno");
+    }
     const cs = d.carg
       .flatMap((c) => (String(c.cd) === "1" ? c.agr || [] : []))
       .flatMap((g) => g.par || [])
       .flatMap((p) => p.cand || []);
-    const a = Number(cs.find((c) => String(c.n) === "13")?.vap || 0),
-      b = Number(cs.find((c) => String(c.n) === "22")?.vap || 0),
-      valid = Number(d.v?.vv || 0);
-    if (![a, b, valid].every(Number.isSafeInteger) || a + b > valid)
+    const a = Number(cs.find((c) => String(c.n) === "13")?.vap || 0);
+    const b = Number(cs.find((c) => String(c.n) === "22")?.vap || 0);
+    const valid = Number(d.v?.vv || 0);
+    if (![a, b, valid].every(Number.isSafeInteger) || a + b > valid) {
       throw Error("Agregado ZZ inválido");
-    return { a, b, other: valid - a - b, valid };
+    }
+    return {
+      a,
+      b,
+      other: valid - a - b,
+      valid,
+    };
   }
   const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-  async function load() {
-    if (inFlight) return;
-    const active = mode,
-      turn = active === "demo" ? 6257 : 6258;
+  async function loadExteriorResults() {
+    if (inFlight) {
+      return;
+    }
+    const active = mode;
+    const turn = active === "demo" ? 6257 : 6258;
     const ticket = ++job;
     inFlight = true;
     render();
@@ -242,20 +273,24 @@
         version === sharedVersion &&
         M.group(locations, snapshots.official).total.loaded === locations.length
       ) {
-        note(
+        showStatus(
           "A publicação compartilhada não mudou desde a última verificação.",
         );
         return;
       }
-      note(
+      showStatus(
         `Carregando o lote compartilhado do ${active === "demo" ? "primeiro" : "segundo"} turno…`,
       );
       const results = await TSEClient.cityResults("zz", turn);
-      if (ticket !== job) return;
+      if (ticket !== job) {
+        return;
+      }
       for (let i = 0; i < locations.length; i++) {
-        if (ticket !== job || controller.signal.aborted) break;
-        const loc = locations[i],
-          raw = results[loc.code];
+        if (ticket !== job || controller.signal.aborted) {
+          break;
+        }
+        const loc = locations[i];
+        const raw = results[loc.code];
         if (raw) {
           snapshots[active][loc.code] = M.readResult(
             raw,
@@ -264,37 +299,47 @@
           );
           completed++;
         }
-        note(
+        showStatus(
           `${i + 1}/${locations.length} localidades verificadas · ${completed} snapshots disponíveis.`,
         );
-        if ((i + 1) % 20 === 0 || i + 1 === locations.length) render();
+        if ((i + 1) % 20 === 0 || i + 1 === locations.length) {
+          render();
+        }
         await pause(0);
       }
       if (ticket === job) {
-        if (active === "official") sharedVersion = version;
+        if (active === "official") {
+          sharedVersion = version;
+        }
         latest[active] =
           active === "demo"
             ? new Date().toISOString()
-            : { received: new Date().toISOString(), reference: null };
+            : {
+                received: new Date().toISOString(),
+                reference: null,
+              };
         if (active === "official") {
           try {
-            latest.official.reference = await getOfficialZZ(controller.signal);
+            latest.official.reference = await readExteriorAggregate(
+              controller.signal,
+            );
           } catch (e) {
-            note(
+            showStatus(
               "Localidades carregadas, mas a conferência ZZ falhou: " +
                 e.message,
             );
           }
         }
-        note(
+        showStatus(
           `Lote do projeto carregado: ${completed}/${locations.length} localidades. ${completed === locations.length ? "Cobertura completa." : "Cobertura parcial."}`,
         );
       }
     } catch (e) {
-      if (ticket === job)
-        note(
+      if (ticket === job) {
+        showStatus(
           `Não foi possível carregar o snapshot compartilhado: ${e.message}. Os dados já exibidos foram preservados.`,
         );
+      }
     } finally {
       if (ticket === job) {
         inFlight = false;
@@ -304,22 +349,24 @@
     }
   }
   let activeController = null;
-  function stop() {
-    if (!inFlight) return;
+  function cancelLoading() {
+    if (!inFlight) {
+      return;
+    }
     job++;
     activeController?.abort();
     activeController = null;
     inFlight = false;
-    note(
+    showStatus(
       "Consulta interrompida. Os resultados já recebidos foram preservados como parciais.",
     );
     render();
   }
   function switchMode(next) {
-    stop();
+    cancelLoading();
     mode = next;
     render();
-    load();
+    loadExteriorResults();
   }
   function exportCSV() {
     const data = M.group(locations, snapshots[mode]);
@@ -361,7 +408,9 @@
       "\uFEFF" +
       [header, ...rows].map((row) => row.map(quote).join(";")).join("\r\n");
     const url = URL.createObjectURL(
-      new Blob([csv], { type: "text/csv;charset=utf-8" }),
+      new Blob([csv], {
+        type: "text/csv;charset=utf-8",
+      }),
     );
     const a = document.createElement("a");
     a.href = url;
@@ -372,20 +421,25 @@
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
-  $("extLoad").onclick = load;
-  $("extStop").onclick = stop;
-  $("extExport").onclick = exportCSV;
-  $("extSearch").oninput = render;
-  $("extSort").onchange = render;
+  elementById("extLoad").onclick = loadExteriorResults;
+  elementById("extStop").onclick = cancelLoading;
+  elementById("extExport").onclick = exportCSV;
+  elementById("extSearch").oninput = render;
+  elementById("extSort").onchange = render;
   window.addEventListener("horizonte-mode", (e) => switchMode(e.detail));
   render();
-  if (latest.demo)
-    note(
+  if (latest.demo) {
+    showStatus(
       `Cache oficial do 1º turno carregado: ${M.group(locations, snapshots.demo).total.loaded}/${locations.length} localidades.`,
     );
-  else
-    note("Carregando automaticamente os snapshots compartilhados deste turno.");
+  } else {
+    showStatus(
+      "Carregando automaticamente os snapshots compartilhados deste turno.",
+    );
+  }
   setInterval(() => {
-    if (mode === "official" && !inFlight) load();
+    if (mode === "official" && !inFlight) {
+      loadExteriorResults();
+    }
   }, 300000);
 })();

@@ -1,0 +1,14 @@
+{
+  "name": "painel-eleitoral-2026",
+  "private": true,
+  "scripts": {
+    "start": "node serve.cjs",
+    "test": "node scripts/check.cjs",
+    "collect": "node collect-tse.cjs",
+    "format": "prettier --write dist scripts collect-tse.cjs serve.cjs MANUTENCAO.md docs",
+    "format:check": "prettier --check dist scripts collect-tse.cjs serve.cjs MANUTENCAO.md docs"
+  },
+  "devDependencies": {
+    "prettier": "3.6.2"
+  }
+}

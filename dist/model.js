@@ -1,20 +1,41 @@
+/** Resultado nacional: valida o arquivo do TSE e calcula a projeção a partir do histórico. */
 (function (root) {
-  function project(history, method = "recent") {
-    const cur = history.at(-1);
-    if (!cur || cur.p <= 0) return null;
-    if (cur.p === 100) return [cur.a, cur.b];
-    if (method === "average")
-      return [(cur.a * 100) / cur.p, (cur.b * 100) / cur.p];
-    const prev = history[Math.max(0, history.length - 5)];
-    if (prev === cur || cur.p <= prev.p || cur.a < prev.a || cur.b < prev.b)
+  function projectFinalVotes(history, method = "recent") {
+    const currentResult = history.at(-1);
+    if (!currentResult || currentResult.p <= 0) {
       return null;
+    }
+    if (currentResult.p === 100) {
+      return [currentResult.a, currentResult.b];
+    }
+    if (method === "average") {
+      return [
+        (currentResult.a * 100) / currentResult.p,
+        (currentResult.b * 100) / currentResult.p,
+      ];
+    }
+    const previousResult = history[Math.max(0, history.length - 5)];
+    if (
+      previousResult === currentResult ||
+      currentResult.p <= previousResult.p ||
+      currentResult.a < previousResult.a ||
+      currentResult.b < previousResult.b
+    ) {
+      return null;
+    }
     return [
-      cur.a + ((cur.a - prev.a) / (cur.p - prev.p)) * (100 - cur.p),
-      cur.b + ((cur.b - prev.b) / (cur.p - prev.p)) * (100 - cur.p),
+      currentResult.a +
+        ((currentResult.a - previousResult.a) /
+          (currentResult.p - previousResult.p)) *
+          (100 - currentResult.p),
+      currentResult.b +
+        ((currentResult.b - previousResult.b) /
+          (currentResult.p - previousResult.p)) *
+          (100 - currentResult.p),
     ];
   }
-  function turnout(d) {
-    const count = (x) =>
+  function readParticipation(payload) {
+    const readNonNegativeCount = (x) =>
       x !== undefined &&
       x !== null &&
       x !== "" &&
@@ -22,29 +43,30 @@
       Number(x) >= 0
         ? Number(x)
         : null;
-    const e = d.e || {},
-      v = d.v || {};
+    const electorate = payload.e || {};
+    const votes = payload.v || {};
     return {
-      electorate: count(e.te),
-      covered: count(e.esi),
-      attended: count(e.c),
-      abstained: count(e.a),
-      totalVotes: count(v.tv),
-      valid: count(v.vv),
-      blank: count(v.vb),
-      nullVotes: count(v.tvn),
-      technicalNull: count(v.vnt),
+      electorate: readNonNegativeCount(electorate.te),
+      covered: readNonNegativeCount(electorate.esi),
+      attended: readNonNegativeCount(electorate.c),
+      abstained: readNonNegativeCount(electorate.a),
+      totalVotes: readNonNegativeCount(votes.tv),
+      valid: readNonNegativeCount(votes.vv),
+      blank: readNonNegativeCount(votes.vb),
+      nullVotes: readNonNegativeCount(votes.tvn),
+      technicalNull: readNonNegativeCount(votes.vnt),
     };
   }
-  function parseTSE(d) {
+  function parseNationalResult(payload) {
     if (
-      String(d.ele) !== "6258" ||
-      String(d.t) !== "2" ||
-      d.f !== "o" ||
-      d.cdabr !== "br"
-    )
+      String(payload.ele) !== "6258" ||
+      String(payload.t) !== "2" ||
+      payload.f !== "o" ||
+      payload.cdabr !== "br"
+    ) {
       throw Error("Arquivo não corresponde à eleição oficial esperada.");
-    const cargo = d.carg?.find((c) => Number(c.cd) === 1);
+    }
+    const cargo = payload.carg?.find((c) => Number(c.cd) === 1);
     const candidates = (cargo?.agr || [])
       .flatMap((g) =>
         (g.par || []).flatMap((p) =>
@@ -57,8 +79,8 @@
         ),
       )
       .sort((a, b) => Number(a.id) - Number(b.id));
-    const total = Number(d.s?.ts),
-      counted = Number(d.s?.st);
+    const total = Number(payload.s?.ts);
+    const counted = Number(payload.s?.st);
     if (
       candidates.length !== 2 ||
       candidates.some(
@@ -69,15 +91,18 @@
       !Number.isSafeInteger(counted) ||
       counted < 0 ||
       counted > total ||
-      !d.dg ||
-      !d.hg
-    )
+      !payload.dg ||
+      !payload.hg
+    ) {
       throw Error(
         "Formato inesperado. Projeção suspensa para evitar dados incorretos.",
       );
-    const [day, month, year] = d.dg.split("/");
-    const timestamp = Date.parse(`${year}-${month}-${day}T${d.hg}-03:00`);
-    if (!Number.isFinite(timestamp)) throw Error("Data do arquivo inválida.");
+    }
+    const [day, month, year] = payload.dg.split("/");
+    const timestamp = Date.parse(`${year}-${month}-${day}T${payload.hg}-03:00`);
+    if (!Number.isFinite(timestamp)) {
+      throw Error("Data do arquivo inválida.");
+    }
     return {
       candidates,
       total,
@@ -85,13 +110,19 @@
       p: (counted / total) * 100,
       a: candidates[0].votes,
       b: candidates[1].votes,
-      id: String(d.idg),
+      id: String(payload.idg),
       timestamp,
-      label: d.hg,
-      date: d.dg,
-      turnout: turnout(d),
+      label: payload.hg,
+      date: payload.dg,
+      turnout: readParticipation(payload),
     };
   }
-  root.ElectionModel = { project, parseTSE, turnout };
-  if (typeof module !== "undefined") module.exports = root.ElectionModel;
+  root.ElectionModel = {
+    project: projectFinalVotes,
+    parseTSE: parseNationalResult,
+    turnout: readParticipation,
+  };
+  if (typeof module !== "undefined") {
+    module.exports = root.ElectionModel;
+  }
 })(globalThis);

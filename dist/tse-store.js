@@ -1,92 +1,129 @@
+/** Cache compartilhado pelo comparativo e pela visão simples. Uma consulta em andamento por URL. */
 (function (root) {
   "use strict";
-  const cache = new Map(),
-    pending = new Map(),
-    listeners = new Set();
-  const url = (turn, uf = "br", code = "") =>
-    `https://resultados.tse.jus.br/oficial/ele2026/${turn === 1 ? "6257" : "6258"}/dados/${uf}/${uf}${code}-c0001-e00${turn === 1 ? "6257" : "6258"}-u.json`;
-  function expected(address) {
-    const m = address.match(
+  const PARTIAL_RESULT_TTL_MS = 5 * 60 * 1000;
+  const REQUEST_TIMEOUT_MS = 15 * 1000;
+  const cachedResults = new Map();
+  const pendingRequests = new Map();
+  const updateListeners = new Set();
+
+  function buildResultUrl(turn, state = "br", municipalityCode = "") {
+    const electionCode = turn === 1 ? "6257" : "6258";
+    const filename = `${state}${municipalityCode}-c0001-e00${electionCode}-u.json`;
+    return `https://resultados.tse.jus.br/oficial/ele2026/${electionCode}/dados/${state}/${filename}`;
+  }
+
+  function readExpectedLocation(address) {
+    const match = address.match(
       /\/625([78])\/dados\/([a-z]{2})\/([a-z]{2})(\d{5})?-c0001-e00625[78]-u\.json$/,
     );
-    if (!m || m[2] !== m[3]) throw Error("Endereço de resultado inesperado");
+    if (!match || match[2] !== match[3]) {
+      throw Error("Endereço de resultado inesperado");
+    }
+    const [, electionSuffix, state, , municipalityCode] = match;
     return {
-      turn: m[1] === "7" ? 1 : 2,
-      scope: m[4] ? "mu" : m[2] === "br" ? "br" : "uf",
-      area: m[4] || m[2],
+      turn: electionSuffix === "7" ? 1 : 2,
+      scope: municipalityCode ? "mu" : state === "br" ? "br" : "uf",
+      area: municipalityCode || state,
     };
   }
-  function freeze(value) {
+
+  // O objeto chega a várias telas. Nenhuma delas deve alterar o cache das outras.
+  function freezeRecursively(value) {
     if (value && typeof value === "object") {
       Object.freeze(value);
-      Object.values(value).forEach(freeze);
+      Object.values(value).forEach(freezeRecursively);
     }
     return value;
   }
-  async function load(address) {
-    const exp = expected(address),
-      old = cache.get(address);
+
+  function canReuseCachedResult(entry) {
+    if (!entry) return false;
+    const { st: countedSections, ts: totalSections } = entry.result;
+    const isComplete = totalSections > 0 && countedSections === totalSections;
+    const isRecent = Date.now() - entry.received < PARTIAL_RESULT_TTL_MS;
+    return isComplete || isRecent;
+  }
+
+  async function fetchAndCacheResult(address, expectedLocation, previousEntry) {
+    const response = await fetch(address, {
+      cache: "no-cache",
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    if (!response.ok) {
+      throw Error("Projeto retornou HTTP " + response.status);
+    }
+    const rawResult = await response.json();
+    const validatedResult = root.ComparativoModel.raw(
+      rawResult,
+      expectedLocation,
+    );
     if (
-      old &&
-      ((old.result.ts > 0 && old.result.st === old.result.ts) ||
-        Date.now() - old.received < 300000)
-    )
-      return old.raw;
-    if (pending.has(address)) return pending.get(address);
-    const job = (async () => {
-      const response = await fetch(address, {
-        cache: "no-cache",
-        signal: AbortSignal.timeout(15000),
-      });
-      if (!response.ok) throw Error("Projeto retornou HTTP " + response.status);
-      const data = await response.json(),
-        result = root.ComparativoModel.raw(data, exp);
-      if (old && result.timestamp < old.result.timestamp)
-        throw Error(
-          "  Projeto retornou uma versão anterior; leitura anterior preservada",
-        );
-      const entry = {
-        raw: freeze(data),
-        result: freeze(result),
-        received: Date.now(),
-      };
-      cache.set(address, entry);
-      listeners.forEach((fn) => fn(address, entry));
-      return entry.raw;
-    })();
-    pending.set(address, job);
+      previousEntry &&
+      validatedResult.timestamp < previousEntry.result.timestamp
+    ) {
+      throw Error(
+        "Projeto retornou uma versão anterior; leitura anterior preservada",
+      );
+    }
+    const entry = {
+      raw: freezeRecursively(rawResult),
+      result: freezeRecursively(validatedResult),
+      received: Date.now(),
+    };
+    cachedResults.set(address, entry);
+    updateListeners.forEach((listener) => listener(address, entry));
+    return entry.raw;
+  }
+
+  async function loadSharedResult(address) {
+    const expectedLocation = readExpectedLocation(address);
+    const cachedEntry = cachedResults.get(address);
+    if (canReuseCachedResult(cachedEntry)) return cachedEntry.raw;
+    if (pendingRequests.has(address)) return pendingRequests.get(address);
+    const request = fetchAndCacheResult(address, expectedLocation, cachedEntry);
+    pendingRequests.set(address, request);
     try {
-      return await job;
+      return await request;
     } finally {
-      pending.delete(address);
+      pendingRequests.delete(address);
     }
   }
-  async function getURL(address, { signal } = {}) {
-    signal?.throwIfAborted();
-    const promise = load(address);
-    if (!signal) return promise;
+
+  // Cancelar uma tela não cancela a consulta compartilhada por outra tela.
+  function waitForResult(request, signal) {
+    if (!signal) return request;
     return new Promise((resolve, reject) => {
       const cancel = () => reject(signal.reason || Error("Consulta cancelada"));
       signal.addEventListener("abort", cancel, { once: true });
-      promise.then(
-        (v) => {
+      request.then(
+        (result) => {
           signal.removeEventListener("abort", cancel);
-          resolve(v);
+          resolve(result);
         },
-        (e) => {
+        (error) => {
           signal.removeEventListener("abort", cancel);
-          reject(e);
+          reject(error);
         },
       );
     });
   }
+
+  async function getResult(address, { signal } = {}) {
+    signal?.throwIfAborted();
+    return waitForResult(loadSharedResult(address), signal);
+  }
+
+  function subscribeToUpdates(listener) {
+    updateListeners.add(listener);
+    return () => updateListeners.delete(listener);
+  }
+
+  // API pública preservada para as telas que já usam este módulo.
   root.TSEStore = {
-    url,
-    getURL,
-    peek: (address) => cache.get(address)?.result || null,
-    subscribe: (fn) => {
-      listeners.add(fn);
-      return () => listeners.delete(fn);
-    },
+    url: buildResultUrl,
+    getURL: getResult,
+    peek: (address) => cachedResults.get(address)?.result || null,
+    subscribe: subscribeToUpdates,
   };
 })(globalThis);

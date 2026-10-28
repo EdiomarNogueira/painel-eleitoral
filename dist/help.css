@@ -1,1 +1,141 @@
-.participation{margin:0 0 24px}.participation h2{margin-top:7px}.participation>p{font-size:12px}.participationCards{display:grid;grid-template-columns:repeat(5,1fr);gap:20px;padding:20px 0}.participationCards>div{border-right:1px solid var(--line);padding-right:15px}.participationCards>div:last-child{border:0}.participationCards strong{font-size:27px;margin:12px 0}.participationCards b{display:block;font-size:11px;font-weight:500;margin-bottom:8px}.participationCards small{font-size:10px}.participation details{font-size:12px;line-height:1.7}.participation summary{cursor:pointer;font-weight:600}.participation details p{font-size:12px}.tourHighlight{outline:3px solid #9aba50!important;outline-offset:7px;scroll-margin:100px}#tourDialog{position:fixed;inset:auto 20px 20px auto;margin:0;width:min(430px,calc(100vw - 32px));border:1px solid #cbd6b4;border-radius:14px;background:#fffff9;box-shadow:0 15px 70px #0d29183d;padding:22px;color:var(--ink);max-height:70vh;overflow:auto}#tourDialog::backdrop{background:#15231b18}#tourDialog h2{font-size:22px;margin-top:14px}#tourDialog p{font-size:13px}.tourTop{display:flex;justify-content:space-between;align-items:center;gap:12px}.tourTop span{font-size:9px;letter-spacing:.8px;color:var(--muted)}.tourTop button{font-size:11px;padding:5px;white-space:nowrap}.tourNav{display:flex;justify-content:space-between;gap:16px;margin-top:20px}.tourNav .primary{width:auto;margin:0;padding:12px 20px}header #startTour{white-space:nowrap}.tourHighlight#brazilMap{outline-offset:-3px}@media(max-width:850px){.participationCards{grid-template-columns:repeat(3,1fr)}header{gap:14px}}@media(max-width:500px){.participationCards{grid-template-columns:repeat(2,1fr)}.participationCards>div{border:0}.participationCards>div:last-child{grid-column:1/-1}header .pill{display:none}header #startTour{margin-left:auto}#tourDialog{right:16px;bottom:16px;padding:18px}#tourDialog h2{font-size:19px}}
+.participation {
+  margin: 0 0 24px;
+}
+.participation h2 {
+  margin-top: 7px;
+}
+.participation > p {
+  font-size: 12px;
+}
+.participationCards {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 20px;
+  padding: 20px 0;
+}
+.participationCards > div {
+  border-right: 1px solid var(--line);
+  padding-right: 15px;
+}
+.participationCards > div:last-child {
+  border: 0;
+}
+.participationCards strong {
+  font-size: 27px;
+  margin: 12px 0;
+}
+.participationCards b {
+  display: block;
+  font-size: 11px;
+  font-weight: 500;
+  margin-bottom: 8px;
+}
+.participationCards small {
+  font-size: 10px;
+}
+.participation details {
+  font-size: 12px;
+  line-height: 1.7;
+}
+.participation summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.participation details p {
+  font-size: 12px;
+}
+.tourHighlight {
+  outline: 3px solid #9aba50 !important;
+  outline-offset: 7px;
+  scroll-margin: 100px;
+}
+#tourDialog {
+  position: fixed;
+  inset: auto 20px 20px auto;
+  margin: 0;
+  width: min(430px, calc(100vw - 32px));
+  border: 1px solid #cbd6b4;
+  border-radius: 14px;
+  background: #fffff9;
+  box-shadow: 0 15px 70px #0d29183d;
+  padding: 22px;
+  color: var(--ink);
+  max-height: 70vh;
+  overflow: auto;
+}
+#tourDialog::backdrop {
+  background: #15231b18;
+}
+#tourDialog h2 {
+  font-size: 22px;
+  margin-top: 14px;
+}
+#tourDialog p {
+  font-size: 13px;
+}
+.tourTop {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.tourTop span {
+  font-size: 9px;
+  letter-spacing: 0.8px;
+  color: var(--muted);
+}
+.tourTop button {
+  font-size: 11px;
+  padding: 5px;
+  white-space: nowrap;
+}
+.tourNav {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 20px;
+}
+.tourNav .primary {
+  width: auto;
+  margin: 0;
+  padding: 12px 20px;
+}
+header #startTour {
+  white-space: nowrap;
+}
+.tourHighlight#brazilMap {
+  outline-offset: -3px;
+}
+@media (max-width: 850px) {
+  .participationCards {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  header {
+    gap: 14px;
+  }
+}
+@media (max-width: 500px) {
+  .participationCards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .participationCards > div {
+    border: 0;
+  }
+  .participationCards > div:last-child {
+    grid-column: 1/-1;
+  }
+  header .pill {
+    display: none;
+  }
+  header #startTour {
+    margin-left: auto;
+  }
+  #tourDialog {
+    right: 16px;
+    bottom: 16px;
+    padding: 18px;
+  }
+  #tourDialog h2 {
+    font-size: 19px;
+  }
+}

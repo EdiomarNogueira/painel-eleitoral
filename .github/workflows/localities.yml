@@ -64,16 +64,16 @@ jobs:
           exit 1
 
       - name: Configure GitHub Pages after locality changes
-        if: steps.collect.outputs.changed == 'true'
+        if: github.event_name == 'workflow_dispatch' || steps.collect.outputs.changed == 'true'
         uses: actions/configure-pages@v5
 
       - name: Upload site with refreshed locality snapshots
-        if: steps.collect.outputs.changed == 'true'
+        if: github.event_name == 'workflow_dispatch' || steps.collect.outputs.changed == 'true'
         uses: actions/upload-pages-artifact@v3
         with:
           path: dist
 
       - name: Publish refreshed locality snapshots
         id: deployment
-        if: steps.collect.outputs.changed == 'true'
+        if: github.event_name == 'workflow_dispatch' || steps.collect.outputs.changed == 'true'
         uses: actions/deploy-pages@v4

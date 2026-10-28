@@ -1,5 +1,7 @@
 # Manutenção do Painel Eleitoral 2026
 
+Para localizar funções, entender os campos e seguir o fluxo do sistema, consulte [o guia do código](docs/GUIA_DO_CODIGO.md). `npm test` executa todas as verificações; `npm start` abre o servidor local.
+
 ## Caminho dos dados
 
 1. `collect-tse.cjs` consulta o TSE e grava resultados em `dist/data/tse/`.
@@ -28,7 +30,21 @@ O primeiro turno consolidado local é preservado. `--force` existe para revisar 
 
 Na prévia local, os arquivos existentes na pasta têm prioridade sobre a publicação remota. `PAINEL_REMOTE=1` permite testar a versão de dados publicada. Alterações locais não publicam o site: os workflows só recebem o código após envio ao repositório.
 
-## Onde editar a interface
+## Publicação no GitHub Pages
+
+O site pronto fica em `dist/`. Não usa Jekyll nem uma pasta `docs/`.
+
+Se o log mostrar `No such file or directory ... /github/workspace/docs`, a origem de publicação do repositório está incorreta. No GitHub:
+
+1. Abra `Settings > Pages > Build and deployment`.
+2. Em `Source`, selecione **GitHub Actions**.
+3. Não crie outro workflow sugerido: este projeto já tem os workflows de publicação.
+4. Em `Actions`, abra **Collect TSE data and publish Pages** e execute **Run workflow** na branch principal.
+5. Aguarde a etapa **Publish priority snapshots** concluir. O endereço publicado aparece no ambiente `github-pages`.
+
+A configuração `Deploy from a branch /docs` não deve ser usada. Adicionar `.nojekyll` não corrige uma pasta de origem inexistente. Ambos os workflows enviam `dist` diretamente como artefato do Pages. A execução manual publica mesmo sem novos votos; as execuções agendadas só publicam quando existem alterações.
+
+## Arquivos da interface
 
 - `dist/app.js`: resumo da visão completa.
 - `dist/regional.js`: mapa, carregamento municipal e resultados por região.
@@ -41,6 +57,6 @@ Os modelos de cálculo ficam separados da interface. Os arquivos de dados gerado
 
 ## Verificação
 
-Execute `node test-completion.cjs`, `node test-model.cjs`, `node test-regional.cjs`, `node test-simples.cjs`, `node test-comparativo.cjs`, `node test-first-turn.cjs` e `node test-exterior.cjs`.
+Execute `node test-completion.cjs`, `node test-client-cache.cjs`, `node test-model.cjs`, `node test-regional.cjs`, `node test-simples.cjs`, `node test-comparativo.cjs`, `node test-first-turn.cjs` e `node test-exterior.cjs`.
 
 Os arquivos de lógica e HTML foram formatados com Prettier 3.6.2. Evite executar scripts antigos de migração (`revise-*`, `unify-demo`, `connect-scenario`): suas alterações já estão aplicadas.

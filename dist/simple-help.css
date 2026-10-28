@@ -1,12 +1,72 @@
-.simpleTourHighlight{outline:3px solid #9aba50!important;outline-offset:7px;scroll-margin:110px}
-#simpleTourDialog{position:fixed;inset:auto 20px 20px auto;margin:0;width:min(430px,calc(100vw - 32px));border:1px solid #cbd6b4;border-radius:14px;background:#fffff9;box-shadow:0 15px 70px #0d29183d;padding:22px;color:var(--ink);max-height:70vh;overflow:auto}
-#simpleTourDialog::backdrop{background:#15231b18}
-#simpleTourDialog h2{font-size:22px;margin-top:14px}
-#simpleTourDialog p{font-size:13px}
-.simpleTourTop{display:flex;justify-content:space-between;align-items:center;gap:12px}
-.simpleTourTop span{font-size:9px;letter-spacing:.8px;color:var(--muted)}
-.simpleTourTop button{font-size:11px;padding:5px;white-space:nowrap}
-.simpleTourNav{display:flex;justify-content:space-between;gap:16px;margin-top:20px}
-.simpleTourNav button:last-child{width:auto;margin:0;padding:12px 20px}
-header #startSimpleTour{white-space:nowrap}
-@media(max-width:620px){header #startSimpleTour{margin-left:auto}#simpleTourDialog{right:16px;bottom:16px;padding:18px}#simpleTourDialog h2{font-size:19px}}
+.simpleTourHighlight {
+  outline: 3px solid #9aba50 !important;
+  outline-offset: 7px;
+  scroll-margin: 110px;
+}
+#simpleTourDialog {
+  position: fixed;
+  inset: auto 20px 20px auto;
+  margin: 0;
+  width: min(430px, calc(100vw - 32px));
+  border: 1px solid #cbd6b4;
+  border-radius: 14px;
+  background: #fffff9;
+  box-shadow: 0 15px 70px #0d29183d;
+  padding: 22px;
+  color: var(--ink);
+  max-height: 70vh;
+  overflow: auto;
+}
+#simpleTourDialog::backdrop {
+  background: #15231b18;
+}
+#simpleTourDialog h2 {
+  font-size: 22px;
+  margin-top: 14px;
+}
+#simpleTourDialog p {
+  font-size: 13px;
+}
+.simpleTourTop {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.simpleTourTop span {
+  font-size: 9px;
+  letter-spacing: 0.8px;
+  color: var(--muted);
+}
+.simpleTourTop button {
+  font-size: 11px;
+  padding: 5px;
+  white-space: nowrap;
+}
+.simpleTourNav {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 20px;
+}
+.simpleTourNav button:last-child {
+  width: auto;
+  margin: 0;
+  padding: 12px 20px;
+}
+header #startSimpleTour {
+  white-space: nowrap;
+}
+@media (max-width: 620px) {
+  header #startSimpleTour {
+    margin-left: auto;
+  }
+  #simpleTourDialog {
+    right: 16px;
+    bottom: 16px;
+    padding: 18px;
+  }
+  #simpleTourDialog h2 {
+    font-size: 19px;
+  }
+}

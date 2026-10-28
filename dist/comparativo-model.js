@@ -1,5 +1,7 @@
+/** Comparação entre turnos: totais, percentuais oficiais e normalização dos finalistas. */
 (function (root) {
   "use strict";
+
   const count = (v) =>
     v !== null &&
     v !== undefined &&
@@ -8,26 +10,30 @@
     Number(v) >= 0
       ? Number(v)
       : null;
-  const ratio = (n, d) => (n !== null && d > 0 ? (100 * n) / d : null);
+  const ratio = (n, denominator) =>
+    n !== null && denominator > 0 ? (100 * n) / denominator : null;
   const timestamp = (date, time) => {
-    const [d, m, y] = date.split("/");
-    return Date.parse(`${y}-${m}-${d}T${time}-03:00`);
+    const [day, m, y] = date.split("/");
+    return Date.parse(`${y}-${m}-${day}T${time}-03:00`);
   };
-  function base(d) {
-    const candidates = d.candidates || [],
-      a = count(candidates.find((c) => c.id === "13")?.votes),
-      b = count(candidates.find((c) => c.id === "22")?.votes);
-    const st = count(d.s?.st),
-      ts = count(d.s?.ts),
-      t = root.ElectionModel.turnout(d);
+  function readResultTotals(payload) {
+    const candidates = payload.candidates || [];
+    const a = count(candidates.find((c) => c.id === "13")?.votes);
+    const b = count(candidates.find((c) => c.id === "22")?.votes);
+    const st = count(payload.s?.st);
+    const ts = count(payload.s?.ts);
+    const t = root.ElectionModel.turnout(payload);
     if (
       [a, b, st, ts, t.valid].some((n) => n === null) ||
       st > ts ||
       a + b > t.valid
-    )
+    ) {
       throw Error("Contagens inconsistentes");
-    const time = timestamp(d.date, d.time);
-    if (!Number.isFinite(time)) throw Error("Horário oficial inválido");
+    }
+    const time = timestamp(payload.date, payload.time);
+    if (!Number.isFinite(time)) {
+      throw Error("Horário oficial inválido");
+    }
     return {
       a,
       b,
@@ -35,55 +41,63 @@
       ts,
       p: ratio(st, ts),
       t,
-      date: d.date,
-      time: d.time,
+      date: payload.date,
+      time: payload.time,
       timestamp: time,
-      first: !!d.first,
+      first: !!payload.first,
     };
   }
-  function raw(d, expected) {
-    const turn = expected.turn,
-      ele = turn === 1 ? "6257" : "6258";
+  function parseOfficialResult(payload, expected) {
+    const turn = expected.turn;
+    const ele = turn === 1 ? "6257" : "6258";
     if (
-      d.f !== "o" ||
-      String(d.ele) !== ele ||
-      String(d.t) !== String(turn) ||
-      d.tpabr !== expected.scope ||
-      String(d.cdabr).toLowerCase() !== expected.area
-    )
+      payload.f !== "o" ||
+      String(payload.ele) !== ele ||
+      String(payload.t) !== String(turn) ||
+      payload.tpabr !== expected.scope ||
+      String(payload.cdabr).toLowerCase() !== expected.area
+    ) {
       throw Error("Eleição, turno ou localidade não corresponde à consulta");
-    const cs = (d.carg || [])
+    }
+    const cs = (payload.carg || [])
       .filter((c) => String(c.cd) === "1")
       .flatMap((c) =>
         (c.agr || []).flatMap((a) =>
           (a.par || []).flatMap((p) => p.cand || []),
         ),
       );
-    if (new Set(cs.map((c) => String(c.n))).size !== cs.length)
+    if (new Set(cs.map((c) => String(c.n))).size !== cs.length) {
       throw Error("Candidato duplicado");
-    const r = base({
-      ...d,
-      date: d.dg,
-      time: d.hg,
-      candidates: cs.map((c) => ({ id: String(c.n), votes: c.vap })),
+    }
+    const r = readResultTotals({
+      ...payload,
+      date: payload.dg,
+      time: payload.hg,
+      candidates: cs.map((c) => ({
+        id: String(c.n),
+        votes: c.vap,
+      })),
       first: turn === 1,
     });
-    if (turn === 2 && (cs.length !== 2 || r.a + r.b !== r.t.valid))
+    if (turn === 2 && (cs.length !== 2 || r.a + r.b !== r.t.valid)) {
       throw Error("Finalistas ou votos válidos inconsistentes");
+    }
     return r;
   }
-  function aggregate(items) {
-    if (!items.length || items.some((x) => !x)) return null;
-    const sum = (k) => items.reduce((n, x) => n + x[k], 0),
-      t = {};
+  function aggregateResults(items) {
+    if (!items.length || items.some((x) => !x)) {
+      return null;
+    }
+    const sum = (k) => items.reduce((n, x) => n + x[k], 0);
+    const t = {};
     for (const k of Object.keys(items[0].t))
       t[k] = items.some((x) => x.t[k] === null)
         ? null
         : items.reduce((n, x) => n + x.t[k], 0);
-    const sorted = [...items].sort((a, b) => a.timestamp - b.timestamp),
-      latest = sorted.at(-1),
-      st = sum("st"),
-      ts = sum("ts");
+    const sorted = [...items].sort((a, b) => a.timestamp - b.timestamp);
+    const latest = sorted.at(-1);
+    const st = sum("st");
+    const ts = sum("ts");
     return {
       a: sum("a"),
       b: sum("b"),
@@ -98,19 +112,24 @@
       files: items.length,
     };
   }
-  function delta(a, b) {
+  function calculateChange(a, b) {
     return {
       absolute: a === null || b === null ? null : b - a,
       relative: a > 0 && b !== null ? (100 * (b - a)) / a : null,
     };
   }
-  function compare(one, two, normalized = true) {
-    const begun = !!two && two.st > 0;
+  function compareRounds(firstRound, secondRound, normalized = true) {
+    const begun = !!secondRound && secondRound.st > 0;
     const candidates = ["a", "b"].map((key, i) => {
-      const a = one?.[key] ?? null,
-        b = two?.[key] ?? null,
-        p1 = one ? ratio(a, normalized ? one.a + one.b : one.t.valid) : null,
-        p2 = two ? ratio(b, two.t.valid) : null;
+      const a = firstRound?.[key] ?? null;
+      const b = secondRound?.[key] ?? null;
+      const p1 = firstRound
+        ? ratio(
+            a,
+            normalized ? firstRound.a + firstRound.b : firstRound.t.valid,
+          )
+        : null;
+      const p2 = secondRound ? ratio(b, secondRound.t.valid) : null;
       return {
         name: i ? "Flávio Bolsonaro" : "Lula",
         a,
@@ -118,7 +137,7 @@
         p1,
         p2,
         pp: p1 !== null && p2 !== null ? p2 - p1 : null,
-        ...delta(a, begun ? b : null),
+        ...calculateChange(a, begun ? b : null),
       };
     });
     const definitions = [
@@ -131,10 +150,10 @@
       ["valid", "Votos válidos", "totalVotes"],
     ];
     const participation = definitions.map(([key, name, den]) => {
-      const a = one?.t[key] ?? null,
-        b = two?.t[key] ?? null,
-        p1 = den && one ? ratio(a, one.t[den]) : null,
-        p2 = den && two ? ratio(b, two.t[den]) : null;
+      const a = firstRound?.t[key] ?? null;
+      const b = secondRound?.t[key] ?? null;
+      const p1 = den && firstRound ? ratio(a, firstRound.t[den]) : null;
+      const p2 = den && secondRound ? ratio(b, secondRound.t[den]) : null;
       return {
         name,
         a,
@@ -142,16 +161,29 @@
         p1,
         p2,
         pp: p1 !== null && p2 !== null ? p2 - p1 : null,
-        ...delta(a, begun || key === "electorate" ? b : null),
+        ...calculateChange(a, begun || key === "electorate" ? b : null),
       };
     });
     return {
       candidates,
       participation,
-      partial: !one || !two || one.st !== one.ts || two.st !== two.ts,
+      partial:
+        !firstRound ||
+        !secondRound ||
+        firstRound.st !== firstRound.ts ||
+        secondRound.st !== secondRound.ts,
       begun,
     };
   }
-  root.ComparativoModel = { base, raw, aggregate, compare, delta, ratio };
-  if (typeof module !== "undefined") module.exports = root.ComparativoModel;
+  root.ComparativoModel = {
+    base: readResultTotals,
+    raw: parseOfficialResult,
+    aggregate: aggregateResults,
+    compare: compareRounds,
+    delta: calculateChange,
+    ratio,
+  };
+  if (typeof module !== "undefined") {
+    module.exports = root.ComparativoModel;
+  }
 })(globalThis);

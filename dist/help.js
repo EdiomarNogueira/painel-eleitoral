@@ -1,16 +1,15 @@
+/** Tutorial da visão completa: navegação entre etapas e atualização das explicações. */
 (() => {
-  const $ = (id) => document.getElementById(id),
-    n = (v) =>
-      v === null || v === undefined
-        ? "—"
-        : Math.round(v).toLocaleString("pt-BR"),
-    p = (value, total) =>
-      value !== null && total > 0
-        ? ((100 * value) / total).toLocaleString("pt-BR", {
-            minimumFractionDigits: 1,
-            maximumFractionDigits: 1,
-          }) + "%"
-        : "—";
+  const elementById = (id) => document.getElementById(id);
+  const n = (v) =>
+    v === null || v === undefined ? "—" : Math.round(v).toLocaleString("pt-BR");
+  const p = (value, total) =>
+    value !== null && total > 0
+      ? ((100 * value) / total).toLocaleString("pt-BR", {
+          minimumFractionDigits: 1,
+          maximumFractionDigits: 1,
+        }) + "%"
+      : "—";
   const button = document.createElement("button");
   button.id = "startTour";
   button.className = "secondary";
@@ -25,7 +24,7 @@
   function update(detail) {
     const { mode, cur } = detail;
     let t = cur?.turnout;
-    $("participationSource").textContent =
+    elementById("participationSource").textContent =
       mode === "demo"
         ? "BASE REAL DO 1º TURNO · Contagens distribuídas proporcionalmente na etapa simulada. Válidos incluem TODOS os candidatos; os cartões de projeção comparam apenas Lula e Flávio."
         : cur
@@ -48,13 +47,13 @@
       ["Nulos", t?.nullVotes, t?.totalVotes, "dos votos computados"],
       ["Válidos", t?.valid, t?.totalVotes, "dos votos computados"],
     ];
-    $("participationCards").innerHTML = cards
+    elementById("participationCards").innerHTML = cards
       .map(
         ([label, value, total, desc]) =>
           `<div><span class="label">${label}</span><strong>${p(value ?? null, total)}</strong><b>${n(value)} ${label === "Abstenção" || label === "Comparecimento" ? "eleitores" : "votos"}</b><small>${desc}</small></div>`,
       )
       .join("");
-    $("participationCoverage").textContent = t
+    elementById("participationCoverage").textContent = t
       ? `Eleitorado nacional: ${n(t.electorate)} · Eleitores das seções contadas: ${n(t.covered)} (${p(t.covered, t.electorate)}) · Votos computados: ${n(t.totalVotes)} · Nulos técnicos incluídos: ${n(t.technicalNull)}.`
       : "Ainda não há dados de participação disponíveis.";
   }
@@ -133,11 +132,13 @@
       "Estas são as fórmulas do cálculo nacional. Você chegou ao fim: Concluir fecha o tutorial. O botão Como usar permite começar novamente a qualquer momento.",
     ],
   ];
-  let index = 0,
-    highlight = null,
-    restoreDetails = [];
-  function show() {
-    if (highlight) highlight.classList.remove("tourHighlight");
+  let index = 0;
+  let highlight = null;
+  let restoreDetails = [];
+  function showTourStep() {
+    if (highlight) {
+      highlight.classList.remove("tourHighlight");
+    }
     const [selector, title, text] = steps[index];
     highlight = document.querySelector(selector);
     if (highlight?.tagName === "DETAILS" && !highlight.open) {
@@ -151,46 +152,51 @@
         : "smooth",
       block: "center",
     });
-    $("tourStep").textContent =
+    elementById("tourStep").textContent =
       `ETAPA ${index + 1} DE ${steps.length} · DE CIMA PARA BAIXO`;
-    $("tourTitle").textContent = title;
-    $("tourText").textContent = text;
-    $("tourPrev").disabled = index === 0;
-    $("tourNext").textContent =
+    elementById("tourTitle").textContent = title;
+    elementById("tourText").textContent = text;
+    elementById("tourPrev").disabled = index === 0;
+    elementById("tourNext").textContent =
       index === steps.length - 1 ? "Concluir ✓" : "Próximo ↓";
   }
-  function close() {
+  function closeTutorial() {
     highlight?.classList.remove("tourHighlight");
     restoreDetails.forEach((d) => (d.open = false));
     restoreDetails = [];
     dialog.close();
     button.disabled = false;
-    button.focus({ preventScroll: true });
+    button.focus({
+      preventScroll: true,
+    });
   }
   button.onclick = () => {
     index = 0;
     button.disabled = true;
     dialog.showModal();
-    show();
-    $("tourNext").focus({ preventScroll: true });
+    showTourStep();
+    elementById("tourNext").focus({
+      preventScroll: true,
+    });
   };
-  $("tourNext").onclick = () => {
-    if (index === steps.length - 1) close();
-    else {
+  elementById("tourNext").onclick = () => {
+    if (index === steps.length - 1) {
+      closeTutorial();
+    } else {
       index++;
-      show();
+      showTourStep();
     }
   };
-  $("tourPrev").onclick = () => {
+  elementById("tourPrev").onclick = () => {
     if (index > 0) {
       index--;
-      show();
+      showTourStep();
     }
   };
-  $("cancelTour").onclick = close;
+  elementById("cancelTour").onclick = closeTutorial;
   dialog.oncancel = (e) => {
     e.preventDefault();
-    close();
+    closeTutorial();
   };
   // O app publica horizonte-reading depois de iniciar; não há dependência de render global.
 })();

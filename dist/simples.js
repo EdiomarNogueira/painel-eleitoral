@@ -1,108 +1,133 @@
+/** Controlador da visão simples: estado da página, atualização dos dados e renderização das abas. */
 (() => {
   "use strict";
-  const $ = (id) => document.getElementById(id),
-    R = RegionalModel,
-    S = SimpleModel,
-    ufCodes = Object.keys(FIRST_TURN_DATA.ufs),
-    fmt = (n) => Math.round(n).toLocaleString("pt-BR"),
-    pct = (n) =>
-      Number.isFinite(n)
-        ? n.toLocaleString("pt-BR", {
-            minimumFractionDigits: 1,
-            maximumFractionDigits: 1,
-          }) + "%"
-        : "—",
-    esc = (s) =>
-      String(s).replace(
-        /[&<>"']/g,
-        (c) =>
-          ({
-            "&": "&amp;",
-            "<": "&lt;",
-            ">": "&gt;",
-            '"': "&quot;",
-            "'": "&#39;",
-          })[c],
-      ),
-    normal = (s) =>
-      s
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .toLowerCase();
-  let mode = "official",
-    demoH = {},
-    officialH = {},
-    national = null,
-    records = { demo: [], official: [] },
-    scenario = null,
-    scenarioInputDirty = false,
-    controller = null,
-    extController = null,
-    sigmaTimer = null,
-    lastFetch = null,
-    sharedVersion = null,
-    sharedSync = false;
+
+  const elementById = (id) => document.getElementById(id);
+  const regionalModel = RegionalModel;
+  const simpleModel = SimpleModel;
+  const ufCodes = Object.keys(FIRST_TURN_DATA.ufs);
+  const formatVotes = (n) => Math.round(n).toLocaleString("pt-BR");
+  const formatPercent = (n) =>
+    Number.isFinite(n)
+      ? n.toLocaleString("pt-BR", {
+          minimumFractionDigits: 1,
+          maximumFractionDigits: 1,
+        }) + "%"
+      : "—";
+  const escapeHtml = (s) =>
+    String(s).replace(
+      /[&<>"']/g,
+      (character) =>
+        ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;",
+        })[character],
+    );
+  const normalizeSearch = (s) =>
+    s
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase();
+  let mode = "official";
+  let demoHistories = {};
+  let officialHistories = {};
+  let national = null;
+  let records = {
+    demo: [],
+    official: [],
+  };
+  let scenario = null;
+  let scenarioInputDirty = false;
+  let controller = null;
+  let abroadController = null;
+  let sigmaTimer = null;
+  let lastFetch = null;
+  let sharedVersion = null;
+  let sharedSync = false;
   const abroad = {
-    demo: { ...(window.EXTERIOR_FIRST_TURN?.localities || {}) },
+    demo: {
+      ...(window.EXTERIOR_FIRST_TURN?.localities || {}),
+    },
     official: {},
   };
-  const histories = () => (mode === "demo" ? demoH : officialH);
+  const histories = () => (mode === "demo" ? demoHistories : officialHistories);
   const entries = () =>
     ufCodes.map((uf) => ({
       uf,
-      est: R.estimate(histories()[uf], $("method").value),
+      est: regionalModel.estimate(histories()[uf], elementById("method").value),
     }));
-  const current = () => (mode === "demo" ? S.aggregate(demoH) : national);
-  function split(a, b) {
-    const total = a + b,
-      p = total ? (100 * a) / total : 0;
-    return `<div class="split" aria-label="Lula ${total ? pct(p) : "sem votos"}; Flávio ${total ? pct(100 - p) : "sem votos"}"><span style="width:${p}%"></span><span style="width:${total ? 100 - p : 0}%"></span></div>`;
+  const current = () =>
+    mode === "demo" ? simpleModel.aggregate(demoHistories) : national;
+  function renderVoteSplit(a, b) {
+    const total = a + b;
+    const p = total ? (100 * a) / total : 0;
+    return `<div class="split" aria-label="Lula ${total ? formatPercent(p) : "sem votos"}; Flávio ${total ? formatPercent(100 - p) : "sem votos"}"><span style="width:${p}%"></span><span style="width:${total ? 100 - p : 0}%"></span></div>`;
   }
-  function capture() {
-    const c = current();
-    if (!c) return;
-    const record = { p: c.p, recent: null, average: null };
+  function recordProjection() {
+    const currentResult = current();
+    if (!currentResult) {
+      return;
+    }
+    const record = {
+      p: currentResult.p,
+      recent: null,
+      average: null,
+    };
     for (const method of ["recent", "average"]) {
-      const es = ufCodes.map((uf) => ({
+      const regionalEstimates = ufCodes.map((uf) => ({
         uf,
-        est: R.estimate(histories()[uf], method),
+        est: regionalModel.estimate(histories()[uf], method),
       }));
-      if (S.eligible(histories(), es, mode === "demo"))
-        record[method] = ScenarioModel.totals(es);
+      if (
+        simpleModel.eligible(histories(), regionalEstimates, mode === "demo")
+      ) {
+        record[method] = ScenarioModel.totals(regionalEstimates);
+      }
     }
     const list = records[mode];
-    if (!list.length || JSON.stringify(list.at(-1)) !== JSON.stringify(record))
+    if (
+      !list.length ||
+      JSON.stringify(list.at(-1)) !== JSON.stringify(record)
+    ) {
       list.push(record);
+    }
   }
   function resetDemo() {
-    demoH = {};
+    demoHistories = {};
     records.demo = [];
-    for (const uf of ufCodes)
-      demoH[uf] = [FirstTurn.snapshot(FIRST_TURN_DATA.ufs[uf], 5)];
-    capture();
-    for (const uf of ufCodes)
-      demoH[uf].push(FirstTurn.snapshot(FIRST_TURN_DATA.ufs[uf], 10));
-    capture();
+    for (const uf of ufCodes) {
+      demoHistories[uf] = [FirstTurn.snapshot(FIRST_TURN_DATA.ufs[uf], 5)];
+    }
+    recordProjection();
+    for (const uf of ufCodes) {
+      demoHistories[uf].push(FirstTurn.snapshot(FIRST_TURN_DATA.ufs[uf], 10));
+    }
+    recordProjection();
     scenario = null;
     scenarioInputDirty = false;
     render();
   }
-  function advance(ufs) {
+  function advanceDemoRegions(ufs) {
     let changed = false;
     for (const uf of ufs) {
-      const h = demoH[uf],
-        p = Math.min(100, h.at(-1).p + 5);
+      const h = demoHistories[uf];
+      const p = Math.min(100, h.at(-1).p + 5);
       if (p !== h.at(-1).p) {
         h.push(FirstTurn.snapshot(FIRST_TURN_DATA.ufs[uf], p));
         changed = true;
       }
     }
-    if (!changed) return;
+    if (!changed) {
+      return;
+    }
     scenario = null;
     scenarioInputDirty = false;
-    capture();
+    recordProjection();
     render();
-    $("scenarioStatus").textContent =
+    elementById("scenarioStatus").textContent =
       "A contagem mudou. Calcule novamente para testar um cenário nesta base.";
   }
   function comparison(
@@ -112,288 +137,367 @@
     firstLabel = "Agora",
     lastLabel = "Final",
   ) {
-    $(container).innerHTML = ["Lula", "Flávio"]
+    elementById(container).innerHTML = ["Lula", "Flávio"]
       .map((name, i) => {
-        const key = i ? "b" : "a",
-          a =
-            before && before.a + before.b
-              ? (100 * before[key]) / (before.a + before.b)
-              : null,
-          b =
-            after && after.a + after.b
-              ? (100 * after[key]) / (after.a + after.b)
-              : null;
-        return `<div class="compareRow ${i ? "blue" : "red"}"><div class="compareName">${name}</div><div class="barRow"><span>${firstLabel}</span><div class="barTrack"><i class="before" style="width:${a ?? 0}%"></i></div><b>${pct(a)}</b></div><div class="barRow"><span>${lastLabel}</span><div class="barTrack"><i style="width:${b ?? 0}%"></i></div><b>${pct(b)}</b></div></div>`;
+        const key = i ? "b" : "a";
+        const a =
+          before && before.a + before.b
+            ? (100 * before[key]) / (before.a + before.b)
+            : null;
+        const b =
+          after && after.a + after.b
+            ? (100 * after[key]) / (after.a + after.b)
+            : null;
+        return `<div class="compareRow ${i ? "blue" : "red"}"><div class="compareName">${name}</div><div class="barRow"><span>${firstLabel}</span><div class="barTrack"><i class="before" style="width:${a ?? 0}%"></i></div><b>${formatPercent(a)}</b></div><div class="barRow"><span>${lastLabel}</span><div class="barTrack"><i style="width:${b ?? 0}%"></i></div><b>${formatPercent(b)}</b></div></div>`;
       })
       .join("");
   }
-  function renderSummary(c, projected) {
-    const sum = c ? c.a + c.b : 0;
-    $("candidateCards").innerHTML = [
-      ["Lula", "13", c?.a],
-      ["Flávio Bolsonaro", "22", c?.b],
+  function renderSummary(currentResult, projected) {
+    renderCountedVotes(currentResult);
+    renderProjectedVotes(currentResult, projected);
+    renderProjectionTrend(currentResult);
+    renderParticipation(currentResult);
+  }
+  function renderCountedVotes(currentResult) {
+    const sum = currentResult ? currentResult.a + currentResult.b : 0;
+    elementById("candidateCards").innerHTML = [
+      ["Lula", "13", currentResult?.a],
+      ["Flávio Bolsonaro", "22", currentResult?.b],
     ]
       .map(
         ([name, id, v], i) =>
-          `<div class="${i ? "blue" : "red"}"><img src="photos/${id}.jpeg" alt="${name}" width="56" height="56"><h3>${name}</h3><strong>${sum ? pct((100 * v) / sum) : "—"}</strong><small>${v != null ? fmt(v) + " votos" : "Aguardando leitura"}</small></div>`,
+          `<div class="${i ? "blue" : "red"}"><img src="photos/${id}.jpeg" alt="${name}" width="56" height="56"><h3>${name}</h3><strong>${sum ? formatPercent((100 * v) / sum) : "—"}</strong><small>${v != null ? formatVotes(v) + " votos" : "Aguardando leitura"}</small></div>`,
       )
       .join("");
-    $("currentBar").innerHTML = split(c?.a || 0, c?.b || 0);
-    $("currentLead").textContent = !sum
+    elementById("currentBar").innerHTML = renderVoteSplit(
+      currentResult?.a || 0,
+      currentResult?.b || 0,
+    );
+    elementById("currentLead").textContent = !sum
       ? "Ainda não há votos para comparar."
-      : c.a === c.b
+      : currentResult.a === currentResult.b
         ? "Os dois estão empatados na contagem."
-        : `${c.a > c.b ? "Lula" : "Flávio"} tem ${fmt(Math.abs(c.a - c.b))} votos a mais na contagem atual.`;
-    $("progressRing").style.setProperty("--p", c?.p || 0);
-    $("progressValue").textContent = c ? pct(c.p) : "—";
-    $("progressCaption").textContent =
+        : `${currentResult.a > currentResult.b ? "Lula" : "Flávio"} tem ${formatVotes(Math.abs(currentResult.a - currentResult.b))} votos a mais na contagem atual.`;
+    elementById("progressRing").style.setProperty("--p", currentResult?.p || 0);
+    elementById("progressValue").textContent = currentResult
+      ? formatPercent(currentResult.p)
+      : "—";
+    elementById("progressCaption").textContent =
       mode === "demo"
         ? "Etapa proporcional simulada com resultados reais do 1º turno."
         : national
-          ? `${fmt(national.counted)} de ${fmt(national.total)} seções totalizadas.`
+          ? `${formatVotes(national.counted)} de ${formatVotes(national.total)} seções totalizadas.`
           : "Aguardando a primeira consulta.";
-    comparison("comparisonChart", c, projected);
-    $("projectedLead").textContent = projected
+  }
+  function renderProjectedVotes(currentResult, projected) {
+    comparison("comparisonChart", currentResult, projected);
+    elementById("projectedLead").textContent = projected
       ? `${projected.a === projected.b ? "Empate" : projected.a > projected.b ? "Lula ficaria à frente" : "Flávio ficaria à frente"} se o ritmo de cada estado continuar.`
       : "Projeção indisponível: precisamos de leituras suficientes em todos os estados e no exterior.";
-    if (mode === "official" && R.isComplete(c)) {
-      $("projectedLead").textContent =
+    if (mode === "official" && regionalModel.isComplete(currentResult)) {
+      elementById("projectedLead").textContent =
         "Contagem encerrada: estes são os votos totalizados, sem crescimento projetado.";
     }
-    const method = $("method").value,
-      rawPoints = records[mode].filter((r) => r[method]),
-      fallback = !rawPoints.length && Boolean(c && c.a + c.b),
-      points = rawPoints.length
-        ? rawPoints
-        : fallback
-          ? [{ p: c.p, [method]: { a: c.a, b: c.b } }]
-          : [];
-    const svg = ([key, color]) => {
+  }
+  function renderProjectionTrend(currentResult) {
+    const method = elementById("method").value;
+    const projectionHistory = records[mode].filter((r) => r[method]);
+    const showCurrentCountOnly =
+      !projectionHistory.length &&
+      Boolean(currentResult && currentResult.a + currentResult.b);
+    const points = projectionHistory.length
+      ? projectionHistory
+      : showCurrentCountOnly
+        ? [
+            {
+              p: currentResult.p,
+              [method]: {
+                a: currentResult.a,
+                b: currentResult.b,
+              },
+            },
+          ]
+        : [];
+    const renderCandidateLine = ([key, color]) => {
       const ps = points.map((r) => [
         45 + r.p * 4.3,
         170 - (140 * r[method][key]) / (r[method].a + r[method].b),
       ]);
       return `<polyline points="${ps.map((p) => p.join(",")).join(" ")}" fill="none" stroke="${color}" stroke-width="3"/>${ps.map((p) => `<circle cx="${p[0]}" cy="${p[1]}" r="4" fill="${color}"/>`).join("")}`;
     };
-    $("trendChart").className = "trend";
-    $("trendChart").innerHTML = points.length
+    elementById("trendChart").className = "trend";
+    elementById("trendChart").innerHTML = points.length
       ? `<svg viewBox="0 0 500 215" role="img" aria-label="Projeção de Lula e Flávio, de zero a cem por cento, conforme avança a contagem"><line x1="45" y1="100" x2="475" y2="100" stroke="#adbfc9" stroke-dasharray="5 5"/><text x="3" y="33">100%</text><text x="10" y="104">50%</text><text x="17" y="174">0%</text><text x="45" y="200">0% das seções</text><text x="380" y="200">100% das seções</text>${[
           ["a", "#ba3d48"],
           ["b", "#266caf"],
         ]
-          .map(svg)
+          .map(renderCandidateLine)
           .join("")}</svg>`
       : '<p class="empty">O gráfico começa quando houver base para uma projeção. No ritmo recente, precisamos de duas leituras com avanço.</p>';
-    if (fallback)
-      $("trendChart")
+    if (showCurrentCountOnly) {
+      elementById("trendChart")
         .querySelector("svg")
         .insertAdjacentHTML(
           "beforeend",
           '<text x="95" y="25">Contagem atual; aguardando leituras para projetar a tendência</text>',
         );
-    $("trendCaption").textContent =
+    }
+    elementById("trendCaption").textContent =
       mode === "demo"
         ? "As etapas são simuladas, não registros históricos. Avance uma região para observar o efeito na contagem."
         : "O gráfico registra somente leituras desta sessão. Não representa o histórico anterior à abertura da página.";
-    const t = c?.turnout;
+  }
+  function renderParticipation(currentResult) {
+    const participation = currentResult?.turnout;
     const metrics = [
-      ["Abstenção", t?.abstained, t?.covered, "eleitores"],
-      ["Comparecimento", t?.attended, t?.covered, "eleitores"],
-      ["Brancos", t?.blank, t?.totalVotes, "votos"],
-      ["Nulos", t?.nullVotes, t?.totalVotes, "votos"],
-      ["Válidos", t?.valid, t?.totalVotes, "votos"],
+      [
+        "Abstenção",
+        participation?.abstained,
+        participation?.covered,
+        "eleitores",
+      ],
+      [
+        "Comparecimento",
+        participation?.attended,
+        participation?.covered,
+        "eleitores",
+      ],
+      ["Brancos", participation?.blank, participation?.totalVotes, "votos"],
+      ["Nulos", participation?.nullVotes, participation?.totalVotes, "votos"],
+      ["Válidos", participation?.valid, participation?.totalVotes, "votos"],
     ];
-    $("participationMetrics").innerHTML = metrics
+    elementById("participationMetrics").innerHTML = metrics
       .map(
         ([label, v, total, unit]) =>
-          `<div class="metric"><span>${label}</span><strong>${v != null && total > 0 ? pct((100 * v) / total) : "—"}</strong><small>${v != null ? fmt(v) + " " + unit : "Sem leitura"}</small><div class="miniTrack"><i style="width:${v != null && total > 0 ? (100 * v) / total : 0}%"></i></div></div>`,
+          `<div class="metric"><span>${label}</span><strong>${v != null && total > 0 ? formatPercent((100 * v) / total) : "—"}</strong><small>${v != null ? formatVotes(v) + " " + unit : "Sem leitura"}</small><div class="miniTrack"><i style="width:${v != null && total > 0 ? (100 * v) / total : 0}%"></i></div></div>`,
       )
       .join("");
   }
-  function renderRegions(es) {
-    const rows = S.regionRows(histories(), es),
-      max = Math.max(
-        1,
-        ...rows.map((r) => (r.ready ? r.finalA + r.finalB : r.a + r.b)),
-      );
-    $("regionChart").innerHTML = rows
+  function renderRegions(regionalEstimates) {
+    const rows = simpleModel.regionRows(histories(), regionalEstimates);
+    const max = Math.max(
+      1,
+      ...rows.map((r) => (r.ready ? r.finalA + r.finalB : r.a + r.b)),
+    );
+    elementById("regionChart").innerHTML = rows
       .map(
         (r) =>
-          `<div class="regionRow"><div><b>${r.name}</b><br><small>${pct(r.p)} das seções${!r.all ? " · parcial" : ""}</small></div><div><div class="regionStack" aria-label="${r.name}: ${fmt(r.a + r.b)} votos contados e ${r.remaining == null ? "restante indisponível" : fmt(r.remaining) + " restantes estimados"}"><span style="width:${(100 * (r.a + r.b)) / max}%"></span><span style="width:${(100 * (r.remaining || 0)) / max}%"></span></div></div><div><b>${r.remaining == null ? "—" : fmt(r.remaining)}</b><br><small>restantes estimados</small></div></div>`,
+          `<div class="regionRow"><div><b>${r.name}</b><br><small>${formatPercent(r.p)} das seções${!r.all ? " · parcial" : ""}</small></div><div><div class="regionStack" aria-label="${r.name}: ${formatVotes(r.a + r.b)} votos contados e ${r.remaining == null ? "restante indisponível" : formatVotes(r.remaining) + " restantes estimados"}"><span style="width:${(100 * (r.a + r.b)) / max}%"></span><span style="width:${(100 * (r.remaining || 0)) / max}%"></span></div></div><div><b>${r.remaining == null ? "—" : formatVotes(r.remaining)}</b><br><small>restantes estimados</small></div></div>`,
       )
       .join("");
-    $("regionCoverage").textContent =
-      `${es.filter((e) => e.est).length} de 28 unidades com estimativa (26 estados, Distrito Federal e exterior). Larguras usam a mesma escala de votos entre os dois candidatos.`;
-    $("regionCards").innerHTML = rows
+    elementById("regionCoverage").textContent =
+      `${regionalEstimates.filter((e) => e.est).length} de 28 unidades com estimativa (26 estados, Distrito Federal e exterior). Larguras usam a mesma escala de votos entre os dois candidatos.`;
+    elementById("regionCards").innerHTML = rows
       .map(
         (r) =>
-          `<article class="card"><h3>${r.name}</h3><p>${r.ready ? "Projeção ao final, entre os dois:" : "Ainda sem base para uma projeção."}</p><div class="countryValues"><b class="red">Lula ${r.ready ? pct((100 * r.finalA) / (r.finalA + r.finalB)) : "—"}</b><b class="blue">Flávio ${r.ready ? pct((100 * r.finalB) / (r.finalA + r.finalB)) : "—"}</b></div>${split(r.finalA || 0, r.finalB || 0)}<small>${r.ready ? `${fmt(Math.abs(r.finalA - r.a - (r.finalB - r.b)))} votos de vantagem para ${r.finalA - r.a >= r.finalB - r.b ? "Lula" : "Flávio"} no restante estimado.` : "Consulte novamente após a entrada de novos votos."}</small></article>`,
+          `<article class="card"><h3>${r.name}</h3><p>${r.ready ? "Projeção ao final, entre os dois:" : "Ainda sem base para uma projeção."}</p><div class="countryValues"><b class="red">Lula ${r.ready ? formatPercent((100 * r.finalA) / (r.finalA + r.finalB)) : "—"}</b><b class="blue">Flávio ${r.ready ? formatPercent((100 * r.finalB) / (r.finalA + r.finalB)) : "—"}</b></div>${renderVoteSplit(r.finalA || 0, r.finalB || 0)}<small>${r.ready ? `${formatVotes(Math.abs(r.finalA - r.a - (r.finalB - r.b)))} votos de vantagem para ${r.finalA - r.a >= r.finalB - r.b ? "Lula" : "Flávio"} no restante estimado.` : "Consulte novamente após a entrada de novos votos."}</small></article>`,
       )
       .join("");
-    $("regionNext").disabled =
+    elementById("regionNext").disabled =
       mode === "demo" &&
-      R.groups[$("advanceRegion").value].every(
-        (uf) => demoH[uf].at(-1).p >= 100,
+      regionalModel.groups[elementById("advanceRegion").value].every(
+        (uf) => demoHistories[uf].at(-1).p >= 100,
       );
   }
-  function scenarioReadiness(es) {
+  function scenarioReadiness(regionalEstimates) {
     if (
       mode === "demo" ||
-      R.usableRegions(Object.values(histories()).map((h) => h.at(-1)))
-    )
+      regionalModel.usableRegions(
+        Object.values(histories()).map((h) => h.at(-1)),
+      )
+    ) {
       return "";
-    const available = es.filter((e) => e.est).length;
-    if (available < 28)
+    }
+    const available = regionalEstimates.filter((e) => e.est).length;
+    if (available < 28) {
       return `Simulação oficial aguardando projeção: ${available}/28 unidades prontas; faltam ${28 - available}.`;
+    }
     const snapshots = Object.values(histories()).map((h) => h.at(-1));
-    if (snapshots.length !== 28)
+    if (snapshots.length !== 28) {
       return `Simulação oficial aguardando 28 leituras estaduais; encontrei ${snapshots.length}.`;
+    }
     const age = Math.max(
       ...snapshots.map((s) => Date.now() - (s.received || 0)),
     );
-    if (age >= S.FRESH_MS)
+    if (age >= simpleModel.FRESH_MS) {
       return `Simulação oficial pausada: a publicação compartilhada tem ${Math.max(1, Math.floor(age / 60000))} min. Aguarde uma publicação recente do projeto ou selecione Demonstração com 1º turno.`;
+    }
     const times = snapshots.map((s) => s.time);
-    if (Math.max(...times) - Math.min(...times) > 900000)
+    if (Math.max(...times) - Math.min(...times) > 900000) {
       return "Simulação oficial aguardando leituras com horários mais próximos entre os estados.";
+    }
     return "";
   }
-  function syncScenarioInputs(es, ready) {
-    if (!ready || scenarioInputDirty) return;
-    const bounds = ScenarioModel.limits(es, $("scenarioRegion").value);
-    if (bounds.error) return;
+  function syncScenarioInputs(regionalEstimates, ready) {
+    if (!ready || scenarioInputDirty) {
+      return;
+    }
+    const bounds = ScenarioModel.limits(
+      regionalEstimates,
+      elementById("scenarioRegion").value,
+    );
+    if (bounds.error) {
+      return;
+    }
     const share = Math.max(bounds.min, Math.min(bounds.max, 60));
-    $("scenarioA").value = String(share);
-    $("scenarioB").value = String(100 - share);
+    elementById("scenarioA").value = String(share);
+    elementById("scenarioB").value = String(100 - share);
   }
-  function renderScenario(es, ready) {
-    const before = ready ? ScenarioModel.totals(es) : null,
-      after = ready ? scenario?.after || before : null;
+  function renderScenario(regionalEstimates, ready) {
+    const before = ready ? ScenarioModel.totals(regionalEstimates) : null;
+    const after = ready ? scenario?.after || before : null;
     comparison("scenarioComparison", before, after, "Antes", "Depois");
-    const right = after ? (100 * after.b) / (after.a + after.b) : 50,
-      angle = Math.PI * (1 - right / 100);
-    $("scenarioGauge").className = "scenarioGauge";
-    $("scenarioGauge").innerHTML =
-      `<svg viewBox="0 0 400 240" role="img" aria-label="${after ? "Projeção: Lula " + pct(100 - right) + " e Flávio " + pct(right) : "Aguardando projeção"}"><path d="M 35 190 A 165 165 0 0 1 200 25" fill="none" stroke="#ba3d48" stroke-width="20"/><path d="M 200 25 A 165 165 0 0 1 365 190" fill="none" stroke="#266caf" stroke-width="20"/>${after ? `<line x1="200" y1="190" x2="${200 + 130 * Math.cos(angle)}" y2="${190 - 130 * Math.sin(angle)}" stroke="#192b35" stroke-width="5"/><circle cx="200" cy="190" r="9" fill="#192b35"/>` : ""}<text x="25" y="225" font-size="13" fill="#ba3d48">100% Lula</text><text x="375" y="225" text-anchor="end" font-size="13" fill="#266caf">100% Flávio</text></svg>`;
-    $("scenarioImpact").textContent = !ready
+    const right = after ? (100 * after.b) / (after.a + after.b) : 50;
+    const angle = Math.PI * (1 - right / 100);
+    elementById("scenarioGauge").className = "scenarioGauge";
+    elementById("scenarioGauge").innerHTML =
+      `<svg viewBox="0 0 400 240" role="img" aria-label="${after ? "Projeção: Lula " + formatPercent(100 - right) + " e Flávio " + formatPercent(right) : "Aguardando projeção"}"><path d="M 35 190 A 165 165 0 0 1 200 25" fill="none" stroke="#ba3d48" stroke-width="20"/><path d="M 200 25 A 165 165 0 0 1 365 190" fill="none" stroke="#266caf" stroke-width="20"/>${after ? `<line x1="200" y1="190" x2="${200 + 130 * Math.cos(angle)}" y2="${190 - 130 * Math.sin(angle)}" stroke="#192b35" stroke-width="5"/><circle cx="200" cy="190" r="9" fill="#192b35"/>` : ""}<text x="25" y="225" font-size="13" fill="#ba3d48">100% Lula</text><text x="375" y="225" text-anchor="end" font-size="13" fill="#266caf">100% Flávio</text></svg>`;
+    elementById("scenarioImpact").textContent = !ready
       ? "Aguardando uma projeção completa e atualizada."
       : scenario
-        ? `A mudança em ${scenario.region} altera a projeção de Lula em ${fmt(scenario.after.a - scenario.before.a)} votos. Demais regiões preservadas.`
+        ? `A mudança em ${scenario.region} altera a projeção de Lula em ${formatVotes(scenario.after.a - scenario.before.a)} votos. Demais regiões preservadas.`
         : before
           ? "Sem alteração: o mostrador usa a projeção atual por estados."
           : "Aguardando dados para calcular o cenário.";
-    $("calculate").disabled = !ready;
+    elementById("calculate").disabled = !ready;
     const finalized =
       mode === "official" &&
       ready &&
-      es.every((e) => R.isComplete(e.est.current));
+      regionalEstimates.every((e) => regionalModel.isComplete(e.est.current));
     document.querySelector("#simulate .advanced").hidden = finalized;
-    for (const id of ["scenarioA", "scenarioB"]) $(id).disabled = finalized;
+    for (const id of ["scenarioA", "scenarioB"]) {
+      elementById(id).disabled = finalized;
+    }
     if (finalized) {
-      $("calculate").disabled = true;
-      for (const id of ["scenarioA", "scenarioB"])
-        $(id).value = Number($(id).value).toFixed(2);
-      $("scenarioImpact").textContent =
+      elementById("calculate").disabled = true;
+      for (const id of ["scenarioA", "scenarioB"]) {
+        elementById(id).value = Number(elementById(id).value).toFixed(2);
+      }
+      elementById("scenarioImpact").textContent =
         "Apuração encerrada em todas as regiões. O mostrador apresenta o resultado totalizado; não há votos restantes para projetar.";
     }
     if (ready) {
-      const group = $("scenarioRegion").value,
-        subset = es.filter((e) => R.region(e.uf) === group),
-        total = ScenarioModel.totals(subset),
-        sum = total.a + total.b,
-        min = (100 * subset.reduce((n, e) => n + e.est.current.a, 0)) / sum,
-        max =
-          (100 * (sum - subset.reduce((n, e) => n + e.est.current.b, 0))) / sum;
-      $("scenarioLimits").textContent =
-        `Pelos votos já contados, Lula pode terminar entre ${pct(min)} e ${pct(max)} em ${group}.`;
-    } else
-      $("scenarioLimits").textContent =
-        scenarioReadiness(es) ||
+      const group = elementById("scenarioRegion").value;
+      const subset = regionalEstimates.filter(
+        (e) => regionalModel.region(e.uf) === group,
+      );
+      const total = ScenarioModel.totals(subset);
+      const sum = total.a + total.b;
+      const min = (100 * subset.reduce((n, e) => n + e.est.current.a, 0)) / sum;
+      const max =
+        (100 * (sum - subset.reduce((n, e) => n + e.est.current.b, 0))) / sum;
+      elementById("scenarioLimits").textContent =
+        `Pelos votos já contados, Lula pode terminar entre ${formatPercent(min)} e ${formatPercent(max)} em ${group}.`;
+    } else {
+      elementById("scenarioLimits").textContent =
+        scenarioReadiness(regionalEstimates) ||
         "Precisamos de uma projeção completa para alterar uma região.";
-    $("sigmaLabel").textContent = $("sigma").value + " pontos percentuais";
-    if (finalized)
-      $("scenarioLimits").textContent =
+    }
+    elementById("sigmaLabel").textContent =
+      elementById("sigma").value + " pontos percentuais";
+    if (finalized) {
+      elementById("scenarioLimits").textContent =
         "Esta região já encerrou a contagem. Os percentuais acima são os resultados finais.";
+    }
     const sim =
       ready && !finalized
-        ? R.simulate(scenario?.entries || es, Number($("sigma").value))
+        ? regionalModel.simulate(
+            scenario?.entries || regionalEstimates,
+            Number(elementById("sigma").value),
+          )
         : null;
-    $("chanceMetrics").className = "chanceMetrics";
-    $("chanceMetrics").innerHTML = sim
-      ? `<div class="metric red"><span>Lula nos cenários</span><strong>${pct(sim.a)}</strong></div><div class="metric blue"><span>Flávio nos cenários</span><strong>${pct(sim.b)}</strong></div><div class="metric"><span>Empate</span><strong>${pct(sim.tie)}</strong></div>`
+    elementById("chanceMetrics").className = "chanceMetrics";
+    elementById("chanceMetrics").innerHTML = sim
+      ? `<div class="metric red"><span>Lula nos cenários</span><strong>${formatPercent(sim.a)}</strong></div><div class="metric blue"><span>Flávio nos cenários</span><strong>${formatPercent(sim.b)}</strong></div><div class="metric"><span>Empate</span><strong>${formatPercent(sim.tie)}</strong></div>`
       : "Aguardando uma base completa.";
   }
   function render() {
-    const es = entries(),
-      ready = S.eligible(histories(), es, mode === "demo"),
-      c = current();
-    $("sourceNote").textContent =
+    const regionalEstimates = entries();
+    const ready = simpleModel.eligible(
+      histories(),
+      regionalEstimates,
+      mode === "demo",
+    );
+    const currentResult = current();
+    elementById("sourceNote").textContent =
       mode === "demo"
         ? "DEMONSTRAÇÃO COM 1º TURNO · Resultados reais de 2026 em etapas proporcionais simuladas. Não é o histórico da apuração nem uma previsão do 2º turno."
         : "DADOS OFICIAIS DO 2º TURNO · Verificação a cada 5 minutos. Resultados com 100% das seções são reutilizados; só localidades pendentes precisam de nova coleta.";
-    $("demoActions").hidden = mode !== "demo";
-    $("liveActions").hidden = mode !== "official";
-    $("regionDemo").hidden = mode !== "demo";
-    if (mode === "demo")
-      $("status").textContent = "Etapa simulada · " + pct(c?.p) + " das seções";
-    else if (!controller)
-      $("status").textContent = national
+    elementById("demoActions").hidden = mode !== "demo";
+    elementById("liveActions").hidden = mode !== "official";
+    elementById("regionDemo").hidden = mode !== "demo";
+    if (mode === "demo") {
+      elementById("status").textContent =
+        "Etapa simulada · " + formatPercent(currentResult?.p) + " das seções";
+    } else if (!controller) {
+      elementById("status").textContent = national
         ? `Arquivo Brasil: ${national.date} ${national.label} · Brasília${!ready ? " · projeção ainda sem base suficiente ou desatualizada" : ""}`
         : "Nenhuma leitura compartilhada carregada nesta tela.";
-    $("next").disabled = mode === "demo" && c?.p >= 100 - 1e-8;
-    syncScenarioInputs(es, ready);
-    renderSummary(c, ready ? ScenarioModel.totals(es) : null);
-    renderRegions(es);
-    renderScenario(es, ready);
+    }
+    elementById("next").disabled =
+      mode === "demo" && currentResult?.p >= 100 - 1e-8;
+    syncScenarioInputs(regionalEstimates, ready);
+    renderSummary(
+      currentResult,
+      ready ? ScenarioModel.totals(regionalEstimates) : null,
+    );
+    renderRegions(regionalEstimates);
+    renderScenario(regionalEstimates, ready);
     renderAbroad();
-    compareContext();
+    getComparisonContext();
   }
-  async function json(url, signal) {
-    return TSEStore.getURL(url, { signal });
+  async function fetchJson(url, signal) {
+    return TSEStore.getURL(url, {
+      signal,
+    });
   }
   async function refresh() {
-    if (controller) return;
+    if (controller) {
+      return;
+    }
     const ctl = new AbortController();
     controller = ctl;
-    $("refresh").disabled = true;
-    $("stop").disabled = false;
+    elementById("refresh").disabled = true;
+    elementById("stop").disabled = false;
     let error = null;
     try {
       const staged = {};
       for (let i = 0; i < ufCodes.length; i++) {
         const uf = ufCodes[i];
-        $("status").textContent =
+        elementById("status").textContent =
           `Carregando estados compartilhados: ${i + 1}/28…`;
-        const d = await json(
-            `https://resultados.tse.jus.br/oficial/ele2026/6258/dados/${uf}/${uf}-c0001-e006258-u.json`,
-            AbortSignal.any([ctl.signal, AbortSignal.timeout(15000)]),
-          ),
-          s = R.parse(d, uf);
+        const d = await fetchJson(
+          `https://resultados.tse.jus.br/oficial/ele2026/6258/dados/${uf}/${uf}-c0001-e006258-u.json`,
+          AbortSignal.any([ctl.signal, AbortSignal.timeout(15000)]),
+        );
+        const s = regionalModel.parse(d, uf);
         s.received = Date.now();
-        const result = R.append(officialH[uf] || [], s);
-        if (result.old)
+        const result = regionalModel.append(officialHistories[uf] || [], s);
+        if (result.old) {
           throw Error(
             "Foi recebida uma versão anterior de " + uf.toUpperCase(),
           );
+        }
         staged[uf] = result.h;
         await new Promise((r) => setTimeout(r, 0));
         ctl.signal.throwIfAborted();
       }
       const nationalData = ElectionModel.parseTSE(
-        await json(
+        await fetchJson(
           "https://resultados.tse.jus.br/oficial/ele2026/6258/dados/br/br-c0001-e006258-u.json",
           AbortSignal.any([ctl.signal, AbortSignal.timeout(15000)]),
         ),
       );
-      if (national && nationalData.timestamp < national.timestamp)
+      if (national && nationalData.timestamp < national.timestamp) {
         throw Error("Arquivo nacional anterior à última leitura");
+      }
       if (mode === "official") {
-        officialH = staged;
+        officialHistories = staged;
         national = nationalData;
         lastFetch = Date.now();
         scenario = null;
         scenarioInputDirty = false;
-        capture();
+        recordProjection();
       }
     } catch (e) {
       error = ctl.signal.aborted
@@ -403,41 +507,48 @@
           ". Leituras anteriores preservadas.";
     } finally {
       controller = null;
-      $("refresh").disabled = false;
-      $("stop").disabled = true;
+      elementById("refresh").disabled = false;
+      elementById("stop").disabled = true;
       render();
-      if (error && mode === "official") $("status").textContent = error;
+      if (error && mode === "official") {
+        elementById("status").textContent = error;
+      }
     }
   }
   async function checkShared(force = true) {
-    if (mode !== "official" || controller || sharedSync) return;
+    if (mode !== "official" || controller || sharedSync) {
+      return;
+    }
     sharedSync = true;
     const activeMode = mode;
-    $("status").textContent = "Verificando a publicação compartilhada…";
+    elementById("status").textContent =
+      "Verificando a publicação compartilhada…";
     try {
       const meta = await TSEClient.manifest(force);
       const version = meta?.checkedAt || "unversioned";
       if (version === sharedVersion && national) {
-        $("status").textContent =
+        elementById("status").textContent =
           "Publicação compartilhada sem mudanças desde a última verificação.";
         await loadAbroad();
         return;
       }
       const shared = await TSEClient.history();
-      if (mode !== activeMode) return;
-      officialH = shared.ufs || {};
+      if (mode !== activeMode) {
+        return;
+      }
+      officialHistories = shared.ufs || {};
       national = shared.national?.at(-1) || null;
       records.official = shared.projections || [];
       sharedVersion = version;
       scenario = null;
       scenarioInputDirty = false;
-      capture();
+      recordProjection();
       render();
       await loadAbroad();
     } catch (e) {
       if (mode === activeMode) {
         render();
-        $("status").textContent =
+        elementById("status").textContent =
           "Falha ao carregar dados compartilhados: " +
           e.message +
           ". A leitura anterior foi preservada.";
@@ -447,42 +558,44 @@
     }
   }
   function renderAbroad() {
-    const data = ExteriorModel.group(EXTERIOR_LOCATIONS, abroad[mode]),
-      q = normal($("countrySearch").value),
-      rows = data.rows
-        .filter((r) =>
-          normal(r.name + " " + r.places.map((p) => p.name).join(" ")).includes(
-            q,
-          ),
-        )
-        .sort(
-          (a, b) => b.valid - a.valid || a.name.localeCompare(b.name, "pt-BR"),
-        );
-    $("abroadNote").textContent =
+    const data = ExteriorModel.group(EXTERIOR_LOCATIONS, abroad[mode]);
+    const q = normalizeSearch(elementById("countrySearch").value);
+    const rows = data.rows
+      .filter((r) =>
+        normalizeSearch(
+          r.name + " " + r.places.map((p) => p.name).join(" "),
+        ).includes(q),
+      )
+      .sort(
+        (a, b) => b.valid - a.valid || a.name.localeCompare(b.name, "pt-BR"),
+      );
+    elementById("abroadNote").textContent =
       mode === "demo"
         ? "Resultado final real do primeiro turno por país. Esses dados não acompanham as etapas simuladas do Resumo."
         : "Segundo turno: arquivos coletados pelo projeto. Países incompletos são identificados.";
-    $("abroadSummary").innerHTML =
-      `<p class="takeaway">${data.total.loaded}/${data.localities} localidades carregadas · ${data.total.loaded ? fmt(data.total.valid) : "—"} votos válidos${data.total.loaded < data.localities ? " · cobertura parcial" : ""}</p>`;
-    $("countryChart").innerHTML = !data.total.loaded
+    elementById("abroadSummary").innerHTML =
+      `<p class="takeaway">${data.total.loaded}/${data.localities} localidades carregadas · ${data.total.loaded ? formatVotes(data.total.valid) : "—"} votos válidos${data.total.loaded < data.localities ? " · cobertura parcial" : ""}</p>`;
+    elementById("countryChart").innerHTML = !data.total.loaded
       ? '<p class="empty">O cadastro de países está disponível, mas os resultados ainda não foram carregados. O lote do projeto é carregado automaticamente. Nenhum valor foi preenchido artificialmente.</p>'
       : !rows.length
         ? '<p class="empty">Nenhum país ou localidade encontrado.</p>'
         : rows
             .map((r) => {
               const sum = r.a + r.b;
-              return `<div class="countryRow"><div class="countryTitle"><b>${esc(r.name)}</b><span>${fmt(r.valid)} votos válidos</span></div><small>${r.loaded}/${r.places.length} localidades${r.loaded < r.places.length ? " · PARCIAL" : ""}</small>${split(r.a, r.b)}<div class="countryValues"><span class="red">Lula ${sum ? pct((100 * r.a) / sum) : "—"}</span><span class="blue">Flávio ${sum ? pct((100 * r.b) / sum) : "—"}</span></div><details><summary>Ver localidades e números</summary><p>${r.places.map((p) => `${esc(p.name)}: ${p.snapshot ? fmt(p.snapshot.a) + " Lula / " + fmt(p.snapshot.b) + " Flávio · " + esc(p.snapshot.date) + " " + esc(p.snapshot.time) : "sem leitura"}`).join("<br>")}</p></details></div>`;
+              return `<div class="countryRow"><div class="countryTitle"><b>${escapeHtml(r.name)}</b><span>${formatVotes(r.valid)} votos válidos</span></div><small>${r.loaded}/${r.places.length} localidades${r.loaded < r.places.length ? " · PARCIAL" : ""}</small>${renderVoteSplit(r.a, r.b)}<div class="countryValues"><span class="red">Lula ${sum ? formatPercent((100 * r.a) / sum) : "—"}</span><span class="blue">Flávio ${sum ? formatPercent((100 * r.b) / sum) : "—"}</span></div><details><summary>Ver localidades e números</summary><p>${r.places.map((p) => `${escapeHtml(p.name)}: ${p.snapshot ? formatVotes(p.snapshot.a) + " Lula / " + formatVotes(p.snapshot.b) + " Flávio · " + escapeHtml(p.snapshot.date) + " " + escapeHtml(p.snapshot.time) : "sem leitura"}`).join("<br>")}</p></details></div>`;
             })
             .join("");
   }
   async function loadAbroad() {
-    if (extController) return;
-    const ctl = new AbortController(),
-      target = mode,
-      turn = mode === "demo" ? 6257 : 6258;
-    extController = ctl;
-    $("loadAbroad").disabled = true;
-    $("stopAbroad").disabled = false;
+    if (abroadController) {
+      return;
+    }
+    const ctl = new AbortController();
+    const target = mode;
+    const turn = mode === "demo" ? 6257 : 6258;
+    abroadController = ctl;
+    elementById("loadAbroad").disabled = true;
+    elementById("stopAbroad").disabled = false;
     let count = 0;
     try {
       const results = await TSEClient.cityResults("zz", turn);
@@ -498,163 +611,191 @@
           );
           count++;
         }
-        if (count % 10 === 0) renderAbroad();
+        if (count % 10 === 0) {
+          renderAbroad();
+        }
         await new Promise((r) => setTimeout(r, 0));
       }
-      $("abroadStatus").textContent =
+      elementById("abroadStatus").textContent =
         `Lote compartilhado carregado: ${count}/${EXTERIOR_LOCATIONS.length} localidades.`;
     } catch (e) {
-      $("abroadStatus").textContent = ctl.signal.aborted
+      elementById("abroadStatus").textContent = ctl.signal.aborted
         ? "Carregamento cancelado. Dados recebidos foram preservados."
         : "Não foi possível carregar o snapshot compartilhado: " +
           e.message +
           ". Dados anteriores foram preservados.";
     } finally {
-      extController = null;
-      $("loadAbroad").disabled = false;
-      $("stopAbroad").disabled = true;
+      abroadController = null;
+      elementById("loadAbroad").disabled = false;
+      elementById("stopAbroad").disabled = true;
       renderAbroad();
     }
   }
-  function compareContext() {
-    const active = $("tab-comparison").getAttribute("aria-selected") === "true";
+  function getComparisonContext() {
+    const active =
+      elementById("tab-comparison").getAttribute("aria-selected") === "true";
     document.querySelector(".sourceControl").hidden = active;
     document.querySelector(".actionbar").hidden = active;
-    if (active)
-      $("sourceNote").textContent =
+    if (active) {
+      elementById("sourceNote").textContent =
         "COMPARATIVO OFICIAL ENTRE TURNOS · Esta aba usa somente resultados oficiais. A demonstração e os cenários das outras abas não alteram estes números.";
+    }
   }
-  function activate(id, focus = false) {
+  function activateTab(id, focus = false) {
     document.querySelectorAll("[role=tab]").forEach((b) => {
       const active = b.id === "tab-" + id;
       b.setAttribute("aria-selected", String(active));
       b.tabIndex = active ? 0 : -1;
-      $(b.getAttribute("aria-controls")).hidden = !active;
-      if (active && focus) b.focus();
+      elementById(b.getAttribute("aria-controls")).hidden = !active;
+      if (active && focus) {
+        b.focus();
+      }
     });
     history.replaceState(null, "", "#" + id);
     render();
   }
   document.querySelectorAll("[role=tab]").forEach((button, i, all) => {
-    button.onclick = () => activate(button.getAttribute("aria-controls"));
+    button.onclick = () => activateTab(button.getAttribute("aria-controls"));
     button.onkeydown = (e) => {
       let next;
-      if (e.key === "ArrowRight") next = (i + 1) % all.length;
-      if (e.key === "ArrowLeft") next = (i + all.length - 1) % all.length;
-      if (e.key === "Home") next = 0;
-      if (e.key === "End") next = all.length - 1;
+      if (e.key === "ArrowRight") {
+        next = (i + 1) % all.length;
+      }
+      if (e.key === "ArrowLeft") {
+        next = (i + all.length - 1) % all.length;
+      }
+      if (e.key === "Home") {
+        next = 0;
+      }
+      if (e.key === "End") {
+        next = all.length - 1;
+      }
       if (next !== undefined) {
         e.preventDefault();
-        activate(all[next].getAttribute("aria-controls"), true);
+        activateTab(all[next].getAttribute("aria-controls"), true);
       }
     };
   });
-  for (const id of ["advanceRegion", "scenarioRegion"])
-    $(id).innerHTML = Object.keys(R.groups)
+  for (const id of ["advanceRegion", "scenarioRegion"]) {
+    elementById(id).innerHTML = Object.keys(regionalModel.groups)
       .map((g) => `<option ${g === "Nordeste" ? "selected" : ""}>${g}</option>`)
       .join("");
-  $("sourceMode").onchange = () => {
+  }
+  elementById("sourceMode").onchange = () => {
     controller?.abort();
-    extController?.abort();
-    mode = $("sourceMode").value;
+    abroadController?.abort();
+    mode = elementById("sourceMode").value;
     scenario = null;
     scenarioInputDirty = false;
-    $("scenarioStatus").textContent = "";
-    $("abroadStatus").textContent = "";
+    elementById("scenarioStatus").textContent = "";
+    elementById("abroadStatus").textContent = "";
     render();
     if (mode === "official") {
       checkShared(true);
       loadAbroad();
     }
   };
-  $("next").onclick = () => advance(ufCodes);
-  $("reset").onclick = resetDemo;
-  $("regionNext").onclick = () => advance(R.groups[$("advanceRegion").value]);
-  $("advanceRegion").onchange = render;
-  $("refresh").onclick = refresh;
-  $("stop").onclick = () => controller?.abort();
-  $("method").onchange = () => {
+  elementById("next").onclick = () => advanceDemoRegions(ufCodes);
+  elementById("reset").onclick = resetDemo;
+  elementById("regionNext").onclick = () =>
+    advanceDemoRegions(
+      regionalModel.groups[elementById("advanceRegion").value],
+    );
+  elementById("advanceRegion").onchange = render;
+  elementById("refresh").onclick = refresh;
+  elementById("stop").onclick = () => controller?.abort();
+  elementById("method").onchange = () => {
     scenario = null;
     scenarioInputDirty = false;
     render();
   };
-  $("scenarioRegion").onchange = () => {
+  elementById("scenarioRegion").onchange = () => {
     scenario = null;
     scenarioInputDirty = false;
-    $("scenarioStatus").textContent = "";
+    elementById("scenarioStatus").textContent = "";
     render();
   };
-  $("sigma").oninput = () => {
-    $("sigmaLabel").textContent = $("sigma").value + " pontos percentuais";
+  elementById("sigma").oninput = () => {
+    elementById("sigmaLabel").textContent =
+      elementById("sigma").value + " pontos percentuais";
     clearTimeout(sigmaTimer);
     sigmaTimer = setTimeout(render, 120);
   };
   for (const [from, to] of [
     ["scenarioA", "scenarioB"],
     ["scenarioB", "scenarioA"],
-  ])
-    $(from).oninput = () => {
+  ]) {
+    elementById(from).oninput = () => {
       scenarioInputDirty = true;
-      const v = $(from).value,
-        n = Number(v);
-      $(to).value =
+      const v = elementById(from).value;
+      const n = Number(v);
+      elementById(to).value =
         v !== "" && n >= 0 && n <= 100
           ? String(Number((100 - n).toFixed(6)))
           : "";
     };
-  $("calculate").onclick = () => {
-    const es = entries();
-    if (!S.eligible(histories(), es, mode === "demo")) return;
-    const v = $("scenarioA").value,
-      result = ScenarioModel.changeRegion(
-        es,
-        $("scenarioRegion").value,
-        v === "" ? NaN : Number(v),
-      );
-    $("scenarioStatus").className = result.error ? "error" : "";
+  }
+  elementById("calculate").onclick = () => {
+    const regionalEstimates = entries();
+    if (
+      !simpleModel.eligible(histories(), regionalEstimates, mode === "demo")
+    ) {
+      return;
+    }
+    const v = elementById("scenarioA").value;
+    const result = ScenarioModel.changeRegion(
+      regionalEstimates,
+      elementById("scenarioRegion").value,
+      v === "" ? NaN : Number(v),
+    );
+    elementById("scenarioStatus").className = result.error ? "error" : "";
     if (result.error) {
-      $("scenarioStatus").textContent = result.error;
+      elementById("scenarioStatus").textContent = result.error;
       return;
     }
     scenario = result;
-    $("scenarioStatus").textContent =
-      `Cenário aplicado em ${scenario.region}: Lula ${pct(scenario.share)} / Flávio ${pct(100 - scenario.share)}.`;
+    elementById("scenarioStatus").textContent =
+      `Cenário aplicado em ${scenario.region}: Lula ${formatPercent(scenario.share)} / Flávio ${formatPercent(100 - scenario.share)}.`;
     render();
   };
-  $("clearScenario").onclick = () => {
+  elementById("clearScenario").onclick = () => {
     scenario = null;
     scenarioInputDirty = false;
-    $("scenarioStatus").textContent =
+    elementById("scenarioStatus").textContent =
       "Alteração removida. Mostrando a projeção atual.";
     render();
   };
-  $("countrySearch").oninput = renderAbroad;
-  $("loadAbroad").onclick = loadAbroad;
-  $("stopAbroad").onclick = () => extController?.abort();
+  elementById("countrySearch").oninput = renderAbroad;
+  elementById("loadAbroad").onclick = loadAbroad;
+  elementById("stopAbroad").onclick = () => abroadController?.abort();
   const d = FIRST_TURN_DATA.national;
-  $("fullFirstTurn").innerHTML =
-    `<p>Arquivo oficial gerado em ${esc(d.date)} às ${esc(d.time)}. Percentuais sobre todos os votos válidos.</p><div class="tableWrap"><table><caption>Brasil · primeiro turno de 2026</caption><thead><tr><th scope="col">Candidato</th><th scope="col">Votos</th><th scope="col">% dos válidos</th></tr></thead><tbody>${[
+  elementById("fullFirstTurn").innerHTML =
+    `<p>Arquivo oficial gerado em ${escapeHtml(d.date)} às ${escapeHtml(d.time)}. Percentuais sobre todos os votos válidos.</p><div class="tableWrap"><table><caption>Brasil · primeiro turno de 2026</caption><thead><tr><th scope="col">Candidato</th><th scope="col">Votos</th><th scope="col">% dos válidos</th></tr></thead><tbody>${[
       ...d.candidates,
     ]
       .sort((a, b) => b.votes - a.votes)
       .map(
-        (c) =>
-          `<tr><td>${esc(c.name)}</td><td>${fmt(c.votes)}</td><td>${pct((100 * c.votes) / Number(d.v.vv))}</td></tr>`,
+        (candidate) =>
+          `<tr><td>${escapeHtml(candidate.name)}</td><td>${formatVotes(candidate.votes)}</td><td>${formatPercent((100 * candidate.votes) / Number(d.v.vv))}</td></tr>`,
       )
       .join("")}</tbody></table></div>`;
   mode = "demo";
   resetDemo();
   mode = "official";
-  $("sourceMode").value = "official";
+  elementById("sourceMode").value = "official";
   const initial = location.hash.slice(1);
   if (
     ["summary", "regions", "simulate", "abroad", "comparison"].includes(initial)
-  )
-    activate(initial);
-  else render();
+  ) {
+    activateTab(initial);
+  } else {
+    render();
+  }
   checkShared(true);
   loadAbroad();
   setInterval(() => {
-    if (mode === "official") checkShared(true);
+    if (mode === "official") {
+      checkShared(true);
+    }
   }, 300000);
 })();
